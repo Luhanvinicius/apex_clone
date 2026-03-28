@@ -1,0 +1,23 @@
+WiinPay
+Documentação da API
+
+GET https://api.wiinpay.com.br/payment/list/{paymentId} List pix Payment
+
+Cabeçalhos:
+b Accept: application/jsoW
+b Authorization: Bearer API_KEY
+
+b 200: Pagamento listado com sucessoy
+b 401: Não autorizado (Chave API inválida)y
+b 500: Erro interno.
+Resposta:
+
+b Certifique-se de substituir o API_KEY no cabeçalho pela sua chave de acesso da APIy
+b Certifique-se de substituir o {paymentId} presente na rota do tipo GET, pelo ID do seu
+pagamento.
+Observações:
+
+b curl --request GET Î
+b --url https://api.wiinpay.com.br/payment/list/paymentId Î
+b --header 'Authorization: Bearer API_KEY' Î
+b --header 'User-Agent: insomnia/11.1.0'

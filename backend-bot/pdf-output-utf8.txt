@@ -1,0 +1,9 @@
+
+--- FILE: DOCUMENTAÇÃO API WIINPAY.pdf ---
+Error reading file: pdf is not a function
+
+--- FILE: Frame 39.pdf ---
+Error reading file: pdf is not a function
+
+--- FILE: documentação.pdf ---
+Error reading file: pdf is not a function

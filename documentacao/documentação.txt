@@ -1,0 +1,42 @@
+POST https://api.wiinpay.com.br/payment/createCreate pix Payment
+Documentação da API 
+WiinPay
+Cabeçalhos
+Accept: application/jso
+Content-Type: application/json
+Corpo da requisição (JSON):
+{
+    "api_key": "chave api", 
+    "value": 0.04, 
+    "name": "Nome e sobrenome", 
+    "email": "exemplo@gmail.com",
+    "description": "Descrição do pagamento", 
+    "webhook_url": "https://webhook.com/ (POST)", 
+    "metadata": { 
+        "key": "value"
+    }
+}
+Parâmetros
+api_key (string): Chave de API para autenticação
+value (number): Valor do pagamento (Mínimo de 3 reais)
+name (string): Nome do pagador
+email (string): E-mail do pagador
+description (string): Descrição do pagamento
+webhook_url (string): URL do Webhook para notificações (Rota do tipo POST)
+metadata (object): Metadados adicionais (opcional).
+Resposta
+201: Pagamento gerado com sucesso
+422: Campo vazio ou inválido
+401: Não autorizado (Chave API inválida)
+500: Erro interno.
+Observações
+Certifique-se de substituir os valores de api_key, name, email, description e 
+webhook_url pelos valores reais da sua aplicação
+O corpo da requisição deve ser enviado como um JSON válido
+A resposta da API pode variar dependendo da implementação específica.
+Exemplo de uso
+curl --request POST \ --url 'https://api.wiinpay.com.br/payment/create' \ --header 
+'accept: application/json' \ --header 'content-type: application/json' \ --data '{ 
+"api_key": "chave api", "value": 3.49, "name": "Nome e sobrenome", "email": 
+"exemplo@gmail.com", "description": "Descrição do pagamento", "webhook_url": 
+"https://webhook.com/", "metadata": { "key": "value" } }'

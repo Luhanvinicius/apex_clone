@@ -1,0 +1,65 @@
+POST https://api.wiinpay.com.br/payment/create Create pix Payment
+
+Cabeçalhos:
+Accept: application/json
+Content-Type: application/json
+Corpo da requisição (JSON):
+{
+"api_key": "chave api",
+"value": 0.04,
+"name": "Nome e sobrenome",
+"email": "exemplo@gmail.com",
+"description": "Descrição do pagamento",
+"webhook_url": "https://webhook.com/ (POST)",
+“split”: {
+“value”: 0.50,
+“percentage”: 1,
+“user_id”: “1234567890”
+},
+"metadata": {
+"key": "value"
+}
+}
+Parâmetros:
+api_key (string): Chave de API para autenticação.
+value (number): Valor do pagamento (Mínimo de 3 reais).
+name (string): Nome do pagador.
+email (string): E-mail do pagador.
+description (string): Descrição do pagamento.
+webhook_url (string): URL do Webhook para notificações (Rota do tipo POST).
+split (json): O split é composto pelo campo value (number opcional), percentage
+(number opcional) e o campo user_id (string obrigatória).
+metadata (object): Metadados adicionais (opcional).
+
+201: Pagamento gerado com sucesso.
+422: Campo vazio ou inválido.
+401: Não autorizado (Chave API inválida).
+500: Erro interno.
+Resposta:
+
+Certifi que-se de substituir os valores de api_key, name, email, description e
+webhook_url pelos valores reais da sua aplicação.
+O corpo da requisição deve ser enviado como um JSON válido
+A resposta da API pode variar dependendo da implementação específica.
+Observações:
+
+curl --re quest POST \
+--url https://api.wiinpay.com.br/payment/create \
+--header accept: application/json \
+--header content-type: application/json \
+--data {
+"api_key": "Chave API",
+"value": 3.50,
+"name": "Nome e sobrenome",
+"email": "exemplo@email.com",
+"description": "Descrição do pagamento",
+"webhook_url": "https://www.webhook.com/ (POST)",
+"split": {
+"percentage": 1,
+"value": 0.10,
+"user_id": "32423423432342
+},
+"metadata": {
+"key": "Valor 1
+}
+}
