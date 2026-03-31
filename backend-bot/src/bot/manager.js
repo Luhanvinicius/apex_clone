@@ -31,10 +31,15 @@ class BotManager {
 
     try {
       const bot = createBot(config);
-      // Removed await to keep the initialization non-blocking
-      bot.launch();
       this.bots.set(config.id, bot);
-      console.log(`✅ Bot [${config.botUsername}] iniciado com sucesso!`);
+      bot.launch()
+        .then(() => {
+          console.log(`✅ Bot [${config.botUsername}] iniciado com sucesso!`);
+        })
+        .catch((err) => {
+          this.bots.delete(config.id);
+          console.error(`❌ Falha ao iniciar Bot [${config.botUsername}]:`, err.message);
+        });
     } catch (err) {
       console.error(`❌ Falha ao iniciar Bot [${config.botUsername}]:`, err.message);
     }
@@ -43,15 +48,38 @@ class BotManager {
   async stopBot(id) {
     const bot = this.bots.get(id);
     if (bot) {
-      await bot.stop();
+      try {
+        await bot.stop(`stop:${id}`);
+      } catch (err) {
+        console.error(`⚠️ Falha ao parar Bot [${id}]:`, err.message);
+      }
       this.bots.delete(id);
       console.log(`🛑 Bot [${id}] parado.`);
     }
   }
 
+  async stopAll(reason = 'shutdown') {
+    const entries = Array.from(this.bots.entries());
+    for (const [id, bot] of entries) {
+      try {
+        await bot.stop(reason);
+        console.log(`🛑 Bot [${id}] parado (${reason}).`);
+      } catch (err) {
+        console.error(`⚠️ Falha ao parar Bot [${id}] durante ${reason}:`, err.message);
+      } finally {
+        this.bots.delete(id);
+      }
+    }
+  }
+
   async reloadBot(config) {
+    if (!config?.id) {
+      console.log('⚠️ reloadBot ignorado: config ausente ou inválida.');
+      return null;
+    }
     await this.stopBot(config.id);
     await this.startBot(config);
+    return config;
   }
 }
 

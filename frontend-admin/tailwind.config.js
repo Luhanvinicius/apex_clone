@@ -12,11 +12,13 @@ module.exports = {
           DEFAULT: '#ffffff',
           dark: '#cccccc',
         },
-        darkBg: '#000000',
-        darkCard: '#111111',
-        darkBorder: '#1e1e1e',
-        darkInput: '#171717',
-        selectedSidebar: '#1a1a1a'
+        darkBg: '#212121',
+        darkCard: '#222222',
+        darkBorder: '#343434',
+        darkInput: '#2a2a2a',
+        selectedSidebar: '#2a2a2a',
+        textPrimary: '#dddddd',
+        textMuted: '#aaaaaa',
       }
     },
   },

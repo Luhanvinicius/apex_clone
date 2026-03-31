@@ -12,7 +12,7 @@ export default function CreateBotPage() {
     
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/config', { 
+      const res = await axios.post('/api/config', { 
         botToken: token
       });
       
@@ -26,60 +26,62 @@ export default function CreateBotPage() {
       alert('✅ Bot instanciado com sucesso!');
       window.location.href = `/settings?botId=${newBotId}`;
     } catch (e) {
-      alert('❌ Erro ao criar bot. Verifique o Token.');
+      const errorMessage = e?.response?.data?.error || 'Erro ao criar bot. Verifique o token informado.';
+      alert(`❌ ${errorMessage}`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-[1200px] mx-auto pt-10 animate-in fade-in duration-700">
-      <div className="bg-[#2a2a2a] p-12 rounded-[20px] space-y-8">
-        
-        <h1 className="text-[44px] font-black text-white leading-tight">Criar Bot no Telegram</h1>
+    <div className="w-full pb-10 pt-1 animate-in fade-in duration-500">
+      <div className="w-full rounded-[18px] border border-white/10 bg-[#1f2023] shadow-[0_8px_35px_rgba(0,0,0,0.35)] px-5 md:px-6 py-6">
+        <h1 className="text-[2.2rem] md:text-[2.45rem] leading-none font-bold text-white">Criar Bot no Telegram</h1>
 
-        <form onSubmit={handleCreateBot} className="space-y-8">
-           <div className="space-y-4">
-              <label className="text-sm font-bold text-white ml-1">Token do Bot:</label>
-              <input 
-                className="w-full bg-[#1c1c1c] border-none rounded-2xl p-6 text-sm font-medium text-white outline-none"
-                placeholder=""
-                value={token}
-                onChange={e => setToken(e.target.value)}
-              />
-           </div>
+        <form onSubmit={handleCreateBot} className="mt-5 space-y-5">
+          <div className="space-y-2">
+            <label className="text-[0.95rem] font-semibold text-white">Token do Bot:</label>
+            <input
+              className="w-full h-[52px] rounded-[12px] border border-[#a3a834] bg-[#17191d] px-4 text-[1rem] font-medium text-white outline-none focus:border-[#b7be44]"
+              placeholder=""
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </div>
 
-           <div className="flex gap-4">
-              <button 
-                type="button"
-                onClick={() => window.history.back()}
-                className="px-8 py-4 bg-transparent border border-[#3a3a3a] rounded-xl text-xs font-black text-white hover:bg-white/5 transition-all"
-              >
-                Cancelar
-              </button>
-              <button 
-                type="submit"
-                disabled={loading}
-                className="px-8 py-4 bg-transparent border border-[#3a3a3a] rounded-xl text-xs font-black text-white hover:bg-white/5 transition-all disabled:opacity-50"
-              >
-                {loading ? 'Sincronizando...' : 'Criar Bot'}
-              </button>
-           </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="h-[40px] px-5 bg-transparent border border-white/20 rounded-[10px] text-[0.92rem] font-semibold text-white hover:bg-white/5 transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-[40px] px-5 bg-transparent border border-white/20 rounded-[10px] text-[0.92rem] font-semibold text-white hover:bg-white/5 transition-all disabled:opacity-50"
+            >
+              {loading ? 'Sincronizando...' : 'Criar Bot'}
+            </button>
+          </div>
         </form>
 
-        <div className="space-y-4 pt-4">
-           <p className="text-sm text-[#888] font-bold leading-relaxed italic">
-              Os bots que apresentarem inatividade, foram deletados do Telegram ou tiveram o token alterado serão excluídos automaticamente. Se tiver algum problema, não hesite em chamar nosso suporte! <span className="text-white hover:underline cursor-pointer">@ApexVips_Suporte</span> 🤝
-           </p>
-           <a 
-              href="https://t.me/BotFather" 
-              target="_blank" 
-              className="inline-block text-sm font-bold text-white underline decoration-[#444] hover:decoration-white transition-all"
-           >
-              Clique aqui para acessar o tutorial de como criar um bot no Telegram.
-           </a>
+        <div className="mt-4 space-y-3">
+          <p className="text-[0.95rem] text-white/60 font-semibold leading-relaxed">
+            Os bots que apresentarem inatividade, foram deletados do Telegram ou tiveram o token alterado serão excluídos automaticamente.
+            Se tiver algum problema, não hesite em chamar nosso suporte!{' '}
+            <span className="text-white hover:underline cursor-pointer">@ApexVips_Suporte</span> 🤝
+          </p>
+          <a
+            href="https://t.me/BotFather"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-[0.95rem] font-semibold text-white underline decoration-white/40 hover:decoration-white transition-all"
+          >
+            Clique aqui para acessar o tutorial de como criar um bot no Telegram.
+          </a>
         </div>
-
       </div>
     </div>
   );

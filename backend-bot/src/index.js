@@ -10,6 +10,8 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
+let server = null;
+let shuttingDown = false;
 
 app.use('/api', apiRoutes);
 app.get('/', (req, res) => res.send('🚀 Apex Bot API is Online!'));
@@ -25,11 +27,13 @@ app.get('/r/:slug', async (req, res) => {
   res.status(404).send('Link não encontrado');
 });
 
-sequelize.sync({ alter: true }).then(async () => {
+const shouldAlterSchema = process.env.DB_SYNC_ALTER === 'true';
+
+sequelize.sync(shouldAlterSchema ? { alter: true } : {}).then(async () => {
   console.log('PostgreSQL connected and tables synced');
   
-  const port = process.env.PORT || 5000;
-  app.listen(port, () => {
+  const port = process.env.PORT || 5001;
+  server = app.listen(port, () => {
     console.log(`🚀 API Apex Online port ${port}`);
   });
   
@@ -40,5 +44,32 @@ sequelize.sync({ alter: true }).then(async () => {
   console.error('Database connection error:', err);
 });
 
-process.once('SIGINT', () => process.exit(0));
-process.once('SIGTERM', () => process.exit(0));
+const shutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  try {
+    console.log(`🧹 Encerrando backend (${signal})...`);
+    await botManager.stopAll(signal);
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  } catch (err) {
+    console.error(`⚠️ Erro ao encerrar backend (${signal}):`, err.message);
+  }
+};
+
+process.once('SIGINT', async () => {
+  await shutdown('SIGINT');
+  process.exit(0);
+});
+
+process.once('SIGTERM', async () => {
+  await shutdown('SIGTERM');
+  process.exit(0);
+});
+
+process.once('SIGUSR2', async () => {
+  await shutdown('SIGUSR2');
+  process.kill(process.pid, 'SIGUSR2');
+});

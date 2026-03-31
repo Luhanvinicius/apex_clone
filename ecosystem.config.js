@@ -10,7 +10,7 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: 5000,
+        PORT: 5001,
       }
     },
     {
@@ -24,7 +24,7 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        NEXT_PUBLIC_API_URL: 'http://localhost:5000/api'
+        NEXT_PUBLIC_API_URL: 'http://localhost:5001/api'
       }
     }
   ]

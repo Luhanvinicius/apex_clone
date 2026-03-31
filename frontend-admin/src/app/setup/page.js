@@ -11,7 +11,7 @@ export default function SetupPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('http://localhost:5000/api/register-initial', { username, password });
+      await axios.post('http://localhost:5001/api/register-initial', { username, password });
       alert('Administrador inicial criado com sucesso!');
       window.location.href = '/login';
     } catch (e) {
@@ -23,24 +23,26 @@ export default function SetupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-darkBg flex items-center justify-center p-6 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-600/10 blur-[150px] rounded-full -translate-y-1/2 translate-x-1/2 animate-pulse"></div>
       
-      <div className="w-full max-w-md bg-[#111111]/80 backdrop-blur-2xl p-12 rounded-[48px] border border-white/5 space-y-12 shadow-3xl relative z-10 animate-in fade-in zoom-in-95 duration-1000">
+      <div className="w-full max-w-md bg-darkCard/90 backdrop-blur-2xl p-12 rounded-[48px] border border-white/5 space-y-12 shadow-3xl relative z-10 animate-in fade-in zoom-in-95 duration-1000">
         
         <div className="flex flex-col items-center gap-4 mb-4">
-           <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center -rotate-6 shadow-[0_0_40px_rgba(255,255,255,0.2)]">
-              <span className="text-black font-black text-3xl tracking-tighter italic">A</span>
-           </div>
+           <img
+             src="/apexlogo.webp"
+             alt="Apex VIPs"
+             className="h-[74px] w-auto object-contain drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]"
+           />
            <div className="text-center">
-              <h1 className="text-2xl font-black text-white tracking-tighter uppercase italic">Apex Initialization</h1>
-              <p className="text-[10px] font-bold text-slate-500 tracking-[0.3em] uppercase mt-1">Configuração de Primeiro Acesso</p>
+              <h1 className="text-[22px] font-bold text-[#dddddd] tracking-tight">Apex Initialization</h1>
+              <p className="text-support font-semibold tracking-[0.2em] uppercase mt-1">Configuração de Primeiro Acesso</p>
            </div>
         </div>
 
         <form onSubmit={handleSetup} className="space-y-6">
            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] ml-1">USUÁRIO RAIZ (ROOT)</label>
+              <label className="text-[12px] font-semibold text-[#aaaaaa] uppercase tracking-[0.18em] ml-1">USUÁRIO RAIZ (ROOT)</label>
               <input 
                 type="text"
                 placeholder="Ex: admin_root"
@@ -52,7 +54,7 @@ export default function SetupPage() {
            </div>
 
            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] ml-1">SENHA MESTRE</label>
+              <label className="text-[12px] font-semibold text-[#aaaaaa] uppercase tracking-[0.18em] ml-1">SENHA MESTRE</label>
               <input 
                 type="password"
                 placeholder="••••••••"

@@ -1,99 +1,188 @@
 "use client"
+
 import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { CreditCard, CheckCircle2, Clock, XCircle, Copy, Wallet } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { CircleDollarSign, CircleSlash2, RotateCcw } from 'lucide-react';
 
-export default function PaymentsPage() {
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
+const gatewayCards = [
+  {
+    id: 'pushinpay',
+    name: 'Pushinpay',
+    methods: 'Métodos: Pix',
+    links: [
+      { prefix: '📖', label: 'Tutorial para obter token', url: 'https://apexvips.com/tutorial/obter-token-pushinpay' },
+      { prefix: '🔗', label: 'Criar conta PushinPay', url: 'https://app.pushinpay.com.br/register' }
+    ],
+    Icon: CircleSlash2,
+    iconWrapClass: 'bg-gradient-to-br from-[#5b61ff] to-[#3f45d7]'
+  },
+  {
+    id: 'syncpay',
+    name: 'Syncpay',
+    methods: 'Métodos: Pix',
+    links: [
+      { prefix: '🔗', label: 'Criar conta Syncpay', url: 'https://app.syncpayments.com.br/signup' },
+      {
+        prefix: '💬',
+        label: 'Aplicar taxa fixa 0,35',
+        url: 'https://api.whatsapp.com/send/?phone=556198170140&text=Olá%2C+tudo+bem%3F%0A%0AVim+através+da+apexvips+e+gostaria+de+aplicar+minha+taxa+fixa+de+0%2C35+por+transação.%0A%0AMeu+e-mail+cadastrado+é%3A&type=phone_number&app_absent=0'
+      }
+    ],
+    Icon: RotateCcw,
+    iconWrapClass: 'bg-gradient-to-br from-[#1e4767] to-[#1f5a86]'
+  },
+  {
+    id: 'wiinpay',
+    name: 'Wiinpay',
+    methods: 'Métodos: Pix',
+    links: [
+      { prefix: '🔗', label: 'Criar conta Wiinpay', url: 'https://wiinpay.com.br/cadastro' },
+      {
+        prefix: '💬',
+        label: 'Aplicar taxa 4,50%',
+        url: 'https://api.whatsapp.com/send/?phone=5547999439885&text=Olá%2C+tudo+bem%3F+Vim+através+da+apexvips+e+gostaria+de+aplicar+minha+taxa+de+4.5%25+por+transação.+Meu+e-mail+cadastrado+é%3A&type=phone_number&app_absent=0'
+      }
+    ],
+    Icon: CircleDollarSign,
+    iconWrapClass: 'bg-gradient-to-br from-[#292139] to-[#3d255f]'
+  }
+];
 
-  useEffect(() => {
-    fetchPayments();
-  }, []);
-
-  const fetchPayments = async () => {
-    try {
-      const res = await axios.get('/api/payments');
-      setPayments(res.data);
-    } catch(err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyRef = (text) => {
-    navigator.clipboard.writeText(text);
-    alert('ID Transação Copiado!');
-  };
-
+function IntegrationsView() {
   return (
-    <div className="space-y-10 animate-in fade-in duration-700 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 ml-2">
-        <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Fluxo Financeiro</h1>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Monitoramento de transações Pix Wiinpay</p>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-[920px]">
+      {gatewayCards.map(({ id, name, methods, links, Icon, iconWrapClass }) => (
+        <div key={id} className="rounded-[24px] border border-white/10 bg-[#202225]/70 p-6 shadow-[0_8px_32px_rgba(0,0,0,0.3)] min-h-[420px] flex flex-col">
+          <div className={`w-[104px] h-[104px] rounded-[22px] ${iconWrapClass} flex items-center justify-center mb-5 mx-auto`}>
+            <Icon size={58} className="text-white/90" strokeWidth={1.75} />
+          </div>
+          <h3 className="text-[1.85rem] leading-none font-bold text-white">{name}</h3>
+          <p className="text-[0.95rem] text-white/70 mt-2">{methods}</p>
+          <div className="h-px w-full bg-white/10 my-5" />
+          <p className="text-[0.95rem] text-white/70">Nenhum token conectado</p>
+
+          <button className="w-full mt-5 h-[52px] rounded-[11px] border border-white/25 text-white text-[1.05rem] font-semibold hover:bg-white/5 transition">
+            Conectar
+          </button>
+
+          <div className="mt-auto pt-2 space-y-2">
+            {links.map((linkItem) => (
+              <a
+                key={linkItem.url}
+                href={linkItem.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-[0.92rem] text-white/85 underline underline-offset-2 hover:text-white transition text-left w-fit leading-[1.2]"
+              >
+                {linkItem.prefix} {linkItem.label}
+              </a>
+            ))}
+          </div>
         </div>
-        <button onClick={fetchPayments} className="bg-white text-black px-6 py-2.5 rounded-2xl text-[10px] font-black transition-all hover:scale-105 active:scale-95 flex items-center gap-3 shadow-xl">
-          <Clock size={14} /> SINCRONIZAR DADOS
-        </button>
+      ))}
+    </div>
+  );
+}
+
+function RoutingView({ onGoToIntegrations }) {
+  return (
+    <div className="rounded-[20px] border border-white/10 bg-[#202225]/70 px-6 py-7 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
+      <h2 className="text-[1.95rem] md:text-[2.15rem] leading-none font-bold text-white mb-4">Ordem dos Gateways de Pagamento</h2>
+      <p className="text-[0.92rem] leading-[1.35] text-white/70 mb-6">
+        Os gateways seguem a ordem de prioridade definida. Se o primeiro estiver em manutenção ou instável, a
+        <span className="font-semibold text-white"> ApexVips </span>
+        redireciona automaticamente para o próximo, garantindo estabilidade e zero perdas em pagamentos.
+      </p>
+
+      <h3 className="text-[1.45rem] font-semibold text-white">Pix</h3>
+      <div className="h-px w-8 bg-white/25 mt-1 mb-4" />
+
+      <div className="rounded-[14px] border border-white/10 bg-white/[0.03] px-5 py-5 mb-4">
+        <h4 className="text-[1.8rem] md:text-[1.95rem] leading-none font-semibold text-white mb-3">Gateways Disponíveis para Adicionar:</h4>
+        <p className="text-[0.9rem] text-white/70 italic">
+          Nenhum gateway configurado ou todos já adicionados.
+          <button
+            onClick={onGoToIntegrations}
+            className="ml-1 underline underline-offset-2 text-white/90 hover:text-white"
+          >
+            Clique aqui
+          </button>
+          <span> para gerenciar as integrações.</span>
+        </p>
       </div>
 
-      <div className="bg-darkCard/20 rounded-[40px] border border-darkBorder overflow-hidden shadow-2xl">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-white/5 border-b border-darkBorder">
-              <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">SESSÃO</th>
-              <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">IDENTIFICADOR</th>
-              <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">ORIGEM</th>
-              <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">VALOR</th>
-              <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-right">STATUS</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-darkBorder/40">
-            {payments.map(p => (
-              <tr key={p.id} className="hover:bg-white/[0.01] transition-colors group">
-                <td className="p-8">
-                   <p className="text-xs font-black text-white uppercase tracking-tight">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</p>
-                   <p className="text-[10px] text-slate-600 font-bold uppercase">{new Date(p.createdAt).toLocaleTimeString('pt-BR')}</p>
-                </td>
-                <td className="p-8">
-                   <div className="flex items-center gap-3 font-mono text-[10px] bg-darkInput/50 w-fit px-3 py-1.5 rounded-xl border border-darkBorder group-hover:border-slate-700 transition-colors">
-                      <span className="text-slate-500">{p.externalReference}</span>
-                      <button onClick={() => copyRef(p.externalReference)} className="text-slate-700 hover:text-white transition">
-                        <Copy size={12} />
-                      </button>
-                   </div>
-                </td>
-                <td className="p-8">
-                   <div className="flex items-center gap-3 text-sm font-black text-slate-400">
-                      <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
-                        <Wallet size={14} className="text-slate-600" />
-                      </div>
-                      {p.user ? p.user.firstName : 'BOT SYSTEM'}
-                   </div>
-                </td>
-                <td className="p-8 text-center">
-                   <span className="text-sm font-black text-white">R$ {p.amount.toFixed(2)}</span>
-                </td>
-                <td className="p-8 text-right">
-                  <span className={`inline-flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-tighter rounded-full ${p.status === 'approved' ? 'bg-green-500/10 text-green-400' : p.status === 'rejected' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
-                    {p.status === 'approved' ? <CheckCircle2 size={12}/> : p.status === 'rejected' ? <XCircle size={12}/> : <Clock size={12}/>}
-                    {p.status === 'approved' ? 'Confirmado' : p.status === 'rejected' ? 'Recusado' : 'Aguardando'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {payments.length === 0 && !loading && (
-              <tr>
-                <td colSpan="5" className="p-32 text-center text-slate-700 font-black uppercase tracking-[0.3em] italic text-xs">Sem movimentações financeiras.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="rounded-[14px] border border-white/10 bg-[#1d1f23] min-h-[190px] flex items-center justify-center mb-6">
+        <p className="max-w-[430px] mx-auto text-center text-[0.98rem] leading-[1.35] text-white/80">
+          Nenhum gateway adicionado para Pix. Adicione gateways acima.
+        </p>
+      </div>
+
+      <div className="flex justify-end">
+        <button className="h-[46px] px-6 rounded-[10px] bg-[#4aa154] text-white text-[0.95rem] font-semibold hover:bg-[#55b05f] transition">
+          Salvar Ordem
+        </button>
       </div>
     </div>
   );
 }
 
+export default function PaymentsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState('routing');
 
+  useEffect(() => {
+    const tabFromQuery = searchParams.get('tab');
+    setActiveTab(tabFromQuery === 'integracoes' || tabFromQuery === 'integrations' ? 'integrations' : 'routing');
+  }, [searchParams]);
+
+  const changeTab = (nextTab) => {
+    setActiveTab(nextTab);
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextTab === 'integrations') {
+      params.set('tab', 'integracoes');
+    } else {
+      params.delete('tab');
+    }
+
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+  };
+
+  const isRouting = activeTab === 'routing';
+
+  return (
+    <div className="w-full pb-10 pt-1 animate-in fade-in duration-500">
+      <section className="w-full rounded-[18px] border border-white/10 bg-[#1f2023] shadow-[0_8px_35px_rgba(0,0,0,0.35)] px-5 md:px-6 py-6">
+        <h1 className="text-[2.05rem] md:text-[2.35rem] leading-none font-bold text-white">Meios de Pagamento</h1>
+
+        <div className="flex items-end gap-2 border-b border-white/12 mt-5 mb-4">
+          <button
+            onClick={() => changeTab('routing')}
+            className={`h-[54px] px-4 rounded-t-[10px] text-[1rem] font-semibold transition ${
+              isRouting
+                ? 'bg-white/10 text-white border-b-2 border-white'
+                : 'text-white/65 hover:text-white'
+            }`}
+          >
+            Roteamento
+          </button>
+          <button
+            onClick={() => changeTab('integrations')}
+            className={`h-[54px] px-4 rounded-t-[10px] text-[1rem] font-semibold transition ${
+              !isRouting
+                ? 'bg-white/10 text-white border-b-2 border-white'
+                : 'text-white/65 hover:text-white'
+            }`}
+          >
+            Integrações
+          </button>
+        </div>
+
+        {isRouting ? <RoutingView onGoToIntegrations={() => changeTab('integrations')} /> : <IntegrationsView />}
+      </section>
+    </div>
+  );
+}

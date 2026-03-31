@@ -1,15 +1,34 @@
 const { Telegraf, Markup } = require('telegraf');
 const LocalSession = require('telegraf-session-local');
 const QRCode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
 const { User, Plan, Config, Source, Payment } = require('../models');
 const PaymentService = require('../services/PaymentService');
 const TelegramService = require('../services/TelegramService');
 
 function createBot(config) {
   const bot = new Telegraf(config.botToken);
+  const sessionDirectory = path.resolve(__dirname, '../../runtime/sessions');
+  fs.mkdirSync(sessionDirectory, { recursive: true });
   
   // Custom storage for session since multiple bots share the same database
-  bot.use((new LocalSession({ database: `session_${config.id}.json` })).middleware());
+  bot.use((new LocalSession({
+    database: path.join(sessionDirectory, `session_${config.id}.json`)
+  })).middleware());
+
+  bot.use(async (ctx, next) => {
+    const chatId = ctx.chat?.id || 'sem-chat';
+    const chatType = ctx.chat?.type || 'sem-tipo';
+    const fromId = ctx.from?.id || 'sem-from';
+    const text = ctx.message?.text || ctx.callbackQuery?.data || ctx.updateType;
+    console.log(`📨 [${config.botUsername}] update chat=${chatId} type=${chatType} from=${fromId} payload=${text}`);
+    return next();
+  });
+
+  bot.catch((err, ctx) => {
+    console.error(`❌ [${config.botUsername}] erro no update ${ctx.updateType}:`, err.message);
+  });
 
   // Helper: Main Menu Keyboard
   const mainMenu = () => Markup.keyboard([
@@ -19,6 +38,7 @@ function createBot(config) {
 
   // Start command
   bot.start(async (ctx) => {
+    console.log(`▶️ [${config.botUsername}] /start recebido em chat=${ctx.chat?.id} tipo=${ctx.chat?.type}`);
     const telegramId = String(ctx.from.id);
     const utm = ctx.startPayload;
     
@@ -47,6 +67,7 @@ function createBot(config) {
     }
 
     await ctx.reply(`Olá ${ctx.from.first_name}! Bem-vindo ao nosso Bot VIP. 🚀\n\nEscolha uma opção no menu abaixo para começar:`, mainMenu());
+    console.log(`✅ [${config.botUsername}] resposta de /start enviada para ${telegramId}`);
   });
 
   // Handler: Show Plans

@@ -20,11 +20,32 @@ const Admin = sequelize.define('Admin', {
   role: {
     type: DataTypes.ENUM('superadmin', 'manager'),
     defaultValue: 'superadmin'
+  },
+  displayName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  fullName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  phone: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  accountSettings: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {}
   }
 });
 
-Admin.beforeCreate(async (admin) => {
-  if (admin.password) {
+Admin.beforeSave(async (admin) => {
+  if (admin.changed('password') && admin.password) {
     admin.password = await bcrypt.hash(admin.password, 10);
   }
 });

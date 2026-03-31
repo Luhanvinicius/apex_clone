@@ -7,6 +7,186 @@ const botManager = require('../bot/manager');
 const PaymentService = require('../services/PaymentService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'apex-vips-ultra-secret-2026';
+const ACCOUNT_DEFAULT_PREFERENCES = {
+  hideRankingName: false,
+  emailNotifications: true,
+  telegramNotifications: false,
+  deviceNotifications: false
+};
+
+const cleanString = (value, fallback = '') => {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+};
+
+const formatDateBR = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Não informado';
+  return date.toLocaleDateString('pt-BR');
+};
+
+const formatDateTimeBR = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Não informado';
+  return date.toLocaleString('pt-BR', { hour12: false });
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = Array.isArray(forwarded) ? forwarded[0] : String(forwarded || req.socket.remoteAddress || '127.0.0.1');
+  return rawIp.split(',')[0].trim().replace('::ffff:', '');
+};
+
+const parseUserAgent = (userAgent = '') => {
+  const ua = String(userAgent).toLowerCase();
+
+  let device = 'Desktop';
+  if (ua.includes('iphone') || ua.includes('android') || ua.includes('mobile')) device = 'Mobile';
+  if (ua.includes('ipad') || ua.includes('tablet')) device = 'Tablet';
+
+  let os = 'Sistema não identificado';
+  if (ua.includes('windows')) os = 'Windows';
+  if (ua.includes('mac os') || ua.includes('macintosh')) os = 'Mac OS';
+  if (ua.includes('linux') && !ua.includes('android')) os = 'Linux';
+  if (ua.includes('android')) os = 'Android';
+  if (ua.includes('iphone') || ua.includes('ipad')) os = 'iOS';
+
+  let browser = 'Navegador';
+  if (ua.includes('edg')) browser = 'Edge';
+  else if (ua.includes('chrome') && !ua.includes('edg')) browser = 'Chrome';
+  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'Safari';
+  else if (ua.includes('firefox')) browser = 'Firefox';
+
+  return { device, osBrowser: `${os} • ${browser}` };
+};
+
+const buildCurrentSession = (req) => {
+  const { device, osBrowser } = parseUserAgent(req.headers['user-agent']);
+  return {
+    id: `session-${Date.now()}`,
+    device: device === 'Desktop' ? 'Desktop' : device,
+    osBrowser,
+    location: 'Conexão Local',
+    type: device,
+    ip: getClientIp(req),
+    connectedAt: formatDateTimeBR(new Date()),
+    current: true
+  };
+};
+
+const normalizeSessions = (sessions, req) => {
+  const source = Array.isArray(sessions) ? sessions : [];
+  let normalized = source
+    .map((session, index) => {
+      if (!session || typeof session !== 'object') return null;
+      return {
+        id: cleanString(session.id, `session-${Date.now()}-${index}`),
+        device: cleanString(session.device, 'Desktop'),
+        osBrowser: cleanString(session.osBrowser, 'Sistema não identificado • Navegador'),
+        location: cleanString(session.location, 'Conexão Local'),
+        type: cleanString(session.type, 'Desktop'),
+        ip: cleanString(session.ip, '127.0.0.1'),
+        connectedAt: cleanString(session.connectedAt, formatDateTimeBR(new Date())),
+        current: Boolean(session.current)
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (!normalized.length) normalized = [buildCurrentSession(req)];
+
+  let foundCurrent = false;
+  normalized = normalized.map((session) => {
+    if (!foundCurrent && session.current) {
+      foundCurrent = true;
+      return session;
+    }
+    return { ...session, current: false };
+  });
+
+  if (!foundCurrent) {
+    normalized[0] = { ...normalized[0], current: true };
+  }
+
+  return normalized;
+};
+
+const normalizeAccounts = (accounts, fallbackEmail, fallbackMemberSince) => {
+  const source = Array.isArray(accounts) ? accounts : [];
+  const emailSet = new Set();
+
+  let normalized = source
+    .map((account, index) => {
+      if (!account || typeof account !== 'object') return null;
+      const email = cleanString(account.email, '').toLowerCase();
+      if (!email || emailSet.has(email)) return null;
+      emailSet.add(email);
+      return {
+        id: cleanString(account.id, `account-${Date.now()}-${index}`),
+        email,
+        memberSince: cleanString(account.memberSince, fallbackMemberSince),
+        current: Boolean(account.current)
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (!normalized.length) {
+    normalized = [{
+      id: 'account-1',
+      email: fallbackEmail.toLowerCase(),
+      memberSince: fallbackMemberSince,
+      current: true
+    }];
+  }
+
+  let foundCurrent = false;
+  normalized = normalized.map((account) => {
+    if (!foundCurrent && account.current) {
+      foundCurrent = true;
+      return account;
+    }
+    return { ...account, current: false };
+  });
+
+  if (!foundCurrent) {
+    normalized[0] = { ...normalized[0], current: true };
+  }
+
+  return normalized;
+};
+
+const normalizePreferences = (preferences, fallback = ACCOUNT_DEFAULT_PREFERENCES) => ({
+  hideRankingName: typeof preferences?.hideRankingName === 'boolean' ? preferences.hideRankingName : Boolean(fallback.hideRankingName),
+  emailNotifications: typeof preferences?.emailNotifications === 'boolean' ? preferences.emailNotifications : Boolean(fallback.emailNotifications),
+  telegramNotifications: typeof preferences?.telegramNotifications === 'boolean' ? preferences.telegramNotifications : Boolean(fallback.telegramNotifications),
+  deviceNotifications: typeof preferences?.deviceNotifications === 'boolean' ? preferences.deviceNotifications : Boolean(fallback.deviceNotifications)
+});
+
+const buildAccountPayload = async (admin, req, settingsOverride = null) => {
+  const settingsRaw = settingsOverride ?? admin.accountSettings;
+  const settings = settingsRaw && typeof settingsRaw === 'object' ? settingsRaw : {};
+
+  const fallbackEmail = cleanString(admin.email, `${admin.username}@apex.local`);
+  const memberSince = formatDateBR(admin.createdAt);
+  const botsCount = await Config.count();
+
+  return {
+    profile: {
+      displayName: cleanString(admin.displayName, admin.username),
+      fullName: cleanString(admin.fullName, admin.username),
+      email: fallbackEmail,
+      phone: cleanString(admin.phone, 'Não informado'),
+      memberSince,
+      activeBots: String(botsCount),
+      botLimit: cleanString(settings.botLimit, '30')
+    },
+    preferences: normalizePreferences(settings.preferences),
+    sessions: normalizeSessions(settings.sessions, req),
+    accounts: normalizeAccounts(settings.accounts, fallbackEmail, memberSince)
+  };
+};
 
 // --- Auth Middleware ---
 const authenticate = async (req, res, next) => {
@@ -40,6 +220,49 @@ router.post('/register-initial', async (req, res) => {
   const { username, password } = req.body;
   const admin = await Admin.create({ username, password });
   res.json({ success: true, message: 'Admin inicial criado com sucesso' });
+});
+
+// --- Account ---
+router.get('/account', authenticate, async (req, res) => {
+  try {
+    const payload = await buildAccountPayload(req.admin, req);
+    res.json(payload);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/account', authenticate, async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const profile = body.profile && typeof body.profile === 'object' ? body.profile : {};
+    const settingsRaw = req.admin.accountSettings && typeof req.admin.accountSettings === 'object' ? req.admin.accountSettings : {};
+
+    const displayName = cleanString(profile.displayName, cleanString(req.admin.displayName, req.admin.username));
+    const fullName = cleanString(profile.fullName, cleanString(req.admin.fullName, req.admin.username));
+    const email = cleanString(profile.email, cleanString(req.admin.email, `${req.admin.username}@apex.local`)).toLowerCase();
+    const phone = cleanString(profile.phone, cleanString(req.admin.phone, 'Não informado'));
+    const botLimit = cleanString(profile.botLimit, cleanString(settingsRaw.botLimit, '30'));
+
+    const preferences = normalizePreferences(body.preferences, settingsRaw.preferences || ACCOUNT_DEFAULT_PREFERENCES);
+    const sessions = normalizeSessions(body.sessions ?? settingsRaw.sessions, req);
+    const accounts = normalizeAccounts(body.accounts ?? settingsRaw.accounts, email, formatDateBR(req.admin.createdAt));
+
+    await req.admin.update({ displayName, fullName, email, phone });
+    req.admin.accountSettings = {
+      ...settingsRaw,
+      botLimit,
+      preferences,
+      sessions,
+      accounts
+    };
+    await req.admin.save();
+
+    const payload = await buildAccountPayload(req.admin, req, req.admin.accountSettings);
+    res.json(payload);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // A partir daqui, as rotas podem ser protegidas
@@ -228,19 +451,95 @@ router.get('/config', async (req, res) => {
 });
 
 router.post('/config', async (req, res) => {
-  const { id, botToken, botUsername, antiClone, welcomeMessage, welcomeFileId, supportUsername, expiredMessage, reminderMessage, vipGroupId, upsellEnabled, upsellMessage, downsellEnabled, downsellMessage, botExternalId } = req.body;
+  const {
+    id,
+    botToken,
+    botUsername,
+    antiClone,
+    welcomeMessage,
+    welcomeFileId,
+    supportUsername,
+    expiredMessage,
+    reminderMessage,
+    vipGroupId,
+    upsellEnabled,
+    upsellMessage,
+    downsellEnabled,
+    downsellMessage,
+    botExternalId,
+    profileName,
+    profileBio,
+    profileShortMessage,
+    profileImageName,
+    shareKey,
+    configKey,
+    configPublic
+  } = req.body;
   
   console.log('[API] POST /config payload botToken:', botToken);
+  const updateData = {};
+  const assignIfDefined = (key, value) => {
+    if (value !== undefined) updateData[key] = value;
+  };
+
+  assignIfDefined('botToken', botToken);
+  assignIfDefined('botUsername', botUsername);
+  assignIfDefined('antiClone', antiClone);
+  assignIfDefined('welcomeMessage', welcomeMessage);
+  assignIfDefined('welcomeFileId', welcomeFileId);
+  assignIfDefined('supportUsername', supportUsername);
+  assignIfDefined('expiredMessage', expiredMessage);
+  assignIfDefined('reminderMessage', reminderMessage);
+  assignIfDefined('vipGroupId', vipGroupId);
+  assignIfDefined('upsellEnabled', upsellEnabled);
+  assignIfDefined('upsellMessage', upsellMessage);
+  assignIfDefined('downsellEnabled', downsellEnabled);
+  assignIfDefined('downsellMessage', downsellMessage);
+  assignIfDefined('botExternalId', botExternalId);
+  assignIfDefined('profileName', profileName);
+  assignIfDefined('profileBio', profileBio);
+  assignIfDefined('profileShortMessage', profileShortMessage);
+  assignIfDefined('profileImageName', profileImageName);
+  assignIfDefined('shareKey', shareKey);
+  assignIfDefined('configKey', configKey);
+  assignIfDefined('configPublic', configPublic);
+
   let bot;
   if (id) {
     console.log('[API] Updating bot:', id);
-    await Config.update({
-      botToken, botUsername, antiClone, welcomeMessage, welcomeFileId, supportUsername, expiredMessage, reminderMessage, vipGroupId, upsellEnabled, upsellMessage, downsellEnabled, downsellMessage, botExternalId
-    }, { where: { id } });
     bot = await Config.findByPk(id);
+
+    if (!bot && botToken) {
+      bot = await Config.findOne({ where: { botToken } });
+    }
+
+    if (!bot) {
+      const configs = await Config.findAll({ order: [['createdAt', 'ASC']] });
+      if (configs.length === 1) {
+        bot = configs[0];
+        console.log('[API] Recovered stale bot id using the only available config:', bot.id);
+      }
+    }
+
+    if (!bot) {
+      return res.status(404).json({ error: 'Bot não encontrado para atualização.' });
+    }
+
+    await bot.update(updateData);
     await botManager.reloadBot(bot);
   } else {
     console.log('[API] Creating NEW bot instance.');
+    const existingBot = botToken
+      ? await Config.findOne({ where: { botToken } })
+      : null;
+
+    if (existingBot) {
+      console.log('[API] Reusing existing bot for duplicated token:', existingBot.id);
+      await existingBot.update(updateData);
+      await botManager.reloadBot(existingBot);
+      return res.json(existingBot);
+    }
+
     const count = await Config.count();
     const tempName = botUsername || `Bot Apex #${count + 1}`;
     
@@ -251,7 +550,14 @@ router.post('/config', async (req, res) => {
       welcomeMessage: welcomeMessage || 'Welcome to our VIP Bot!',
       supportUsername: supportUsername || null,
       upsellEnabled: upsellEnabled !== undefined ? upsellEnabled : true,
-      downsellEnabled: downsellEnabled !== undefined ? downsellEnabled : true
+      downsellEnabled: downsellEnabled !== undefined ? downsellEnabled : true,
+      profileName,
+      profileBio,
+      profileShortMessage,
+      profileImageName,
+      shareKey,
+      configKey,
+      configPublic
     });
     console.log('[API] NEW Bot created with ID:', bot.id);
     await botManager.startBot(bot);

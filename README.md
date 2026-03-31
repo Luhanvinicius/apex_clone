@@ -6,7 +6,7 @@ Este projeto contém a estrutura completa do sistema, contendo o Bot do Telegram
 
 ## 📂 Estrutura do Projeto
 
-- `/backend-bot/`: Backend em Node.js (Express, Mongoose, Telegraf). Lida com a API do robô, banco de dados (MongoDB), webhooks e automações (Cron Jobs).
+- `/backend-bot/`: Backend em Node.js (Express, Sequelize, Telegraf). Lida com a API do robô, banco de dados (PostgreSQL), webhooks e automações (Cron Jobs).
 - `/frontend-admin/`: Painel web em Next.js e TailwindCSS para gerenciar vendas, usuários, planos e interface do bot.
 - `ecosystem.config.js`: Arquivo para rodar ambos os sistemas simultaneamente em background com o PM2.
 
@@ -28,10 +28,10 @@ npm install
 Crie (ou edite) o arquivo `.env` dentro de `backend-bot` com os dados do seu bot:
 ```env
 BOT_TOKEN=SEU_TOKEN_DO_BOTFATHER
-PORT=5000
+PORT=5001
 VIP_GROUP_ID=-100000000000
 ```
-*O Sequelize já está configurado para acessar `postgres:2026` em `localhost`, criando e usando o banco `telegram_vip`.*
+*O Sequelize usa as variáveis `DB_*` do `.env` para conectar no PostgreSQL.*
 
 ### 2. Configurar o Frontend (Painel Web)
 Em outro terminal (ou retorne para a pasta principal), acesse a pasta `frontend-admin` e faça a instalação e build:
@@ -67,3 +67,9 @@ pm2 startup
 - **Bot no Telegram:** @SeuBot
 
 No Painel, você criará os Planos, definirá textos de Boas Vindas e os Usuários poderão comprar iniciando a conversa com o bot enviando `/start`.
+
+## 🧪 Teste real com Telegram
+
+Para teste completo com token real do BotFather e criação de admin inicial, siga:
+
+- `documentacao/teste-real-telegram.md`

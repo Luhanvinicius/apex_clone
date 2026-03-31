@@ -33,7 +33,14 @@ const Config = sequelize.define('Config', {
   upsellEnabled: { type: DataTypes.BOOLEAN, defaultValue: true },
   upsellMessage: { type: DataTypes.TEXT, defaultValue: '🔥 *ESPERE! MEGA OFERTA* 🔥\n\nPor apenas **R$ {diff}** a mais, você pode levar o plano *{plan_name}* (R$ {plan_price}) e ter muito mais tempo e vantagens no VIP!\n\nDeseja aproveitar esse UPGRADE agora?' },
   downsellEnabled: { type: DataTypes.BOOLEAN, defaultValue: true },
-  downsellMessage: { type: DataTypes.TEXT, defaultValue: '😔 *Poxa, ficou pesado para você?*\n\nNão queremos que você fique de fora do nosso VIP! Que tal tentar o nosso plano mais básico, o *{plan_name}*, por apenas **R$ {plan_price}**?\n\nÉ a sua última chance de entrar no grupo!' }
+  downsellMessage: { type: DataTypes.TEXT, defaultValue: '😔 *Poxa, ficou pesado para você?*\n\nNão queremos que você fique de fora do nosso VIP! Que tal tentar o nosso plano mais básico, o *{plan_name}*, por apenas **R$ {plan_price}**?\n\nÉ a sua última chance de entrar no grupo!' },
+  profileName: { type: DataTypes.STRING },
+  profileBio: { type: DataTypes.TEXT },
+  profileShortMessage: { type: DataTypes.STRING },
+  profileImageName: { type: DataTypes.STRING },
+  shareKey: { type: DataTypes.STRING },
+  configKey: { type: DataTypes.STRING },
+  configPublic: { type: DataTypes.BOOLEAN, defaultValue: false }
 });
 
 module.exports = Config;

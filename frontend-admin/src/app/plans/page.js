@@ -17,10 +17,35 @@ export default function PlansPage() {
   }, []);
 
   const fetchPlans = async () => {
-    const botId = localStorage.getItem('selected_bot_id');
-    if (!botId) return;
+    let botId = localStorage.getItem('selected_bot_id');
     try {
-      const res = await axios.get(`http://localhost:5000/api/plans?botId=${botId}`);
+      const configResponse = await axios.get('/api/config');
+      const configList = Array.isArray(configResponse.data) ? configResponse.data : (configResponse.data ? [configResponse.data] : []);
+
+      if (botId) {
+        const selectedConfig = configList.find((item) => String(item.id) === String(botId));
+        if (!selectedConfig) {
+          botId = configList[0] ? String(configList[0].id) : null;
+          if (botId) {
+            localStorage.setItem('selected_bot_id', botId);
+            window.dispatchEvent(new CustomEvent('botChanged', { detail: botId }));
+          } else {
+            localStorage.removeItem('selected_bot_id');
+          }
+        }
+      } else if (configList.length > 0) {
+        botId = String(configList[0].id);
+        localStorage.setItem('selected_bot_id', botId);
+        window.dispatchEvent(new CustomEvent('botChanged', { detail: botId }));
+      }
+
+      if (!botId) {
+        setPlans([]);
+        setLoading(false);
+        return;
+      }
+
+      const res = await axios.get(`http://localhost:5001/api/plans?botId=${botId}`);
       setPlans(res.data);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -32,9 +57,9 @@ export default function PlansPage() {
     if (!botId) return alert('Selecione um bot primeiro.');
     try {
       if (editingId) {
-        await axios.put(`http://localhost:5000/api/plans/${editingId}`, form);
+        await axios.put(`http://localhost:5001/api/plans/${editingId}`, form);
       } else {
-        await axios.post(`http://localhost:5000/api/plans?botId=${botId}`, form);
+        await axios.post(`http://localhost:5001/api/plans?botId=${botId}`, form);
       }
       setForm({ name: '', price: '', durationDays: '', description: '' });
       setEditingId(null);
@@ -181,5 +206,3 @@ export default function PlansPage() {
     </div>
   );
 }
-
-
