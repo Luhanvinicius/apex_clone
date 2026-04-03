@@ -1,75 +1,166 @@
-# SaaS Telegram VIP Bot & Admin Panel
+# SaaS Telegram VIP Bot & Admin Panel - Guia de Deploy VPS Ubuntu
 
 🚀 **Sistema Completo de Automação para Telegram (Vendas de Grupos/Canais VIP)**
 
-Este projeto contém a estrutura completa do sistema, contendo o Bot do Telegram e um Painel Web. Foi adaptado para **rodar nativamente sem Docker**, utilizando o PM2.
+Este guia detalha o processo de deploy em uma VPS Ubuntu (20.04 ou 22.04+) do zero, incluindo Banco de Dados, Backend e Frontend.
 
-## 📂 Estrutura do Projeto
+---
 
-- `/backend-bot/`: Backend em Node.js (Express, Sequelize, Telegraf). Lida com a API do robô, banco de dados (PostgreSQL), webhooks e automações (Cron Jobs).
-- `/frontend-admin/`: Painel web em Next.js e TailwindCSS para gerenciar vendas, usuários, planos e interface do bot.
-- `ecosystem.config.js`: Arquivo para rodar ambos os sistemas simultaneamente em background com o PM2.
+## 🛠️ Requisitos Iniciais na VPS
 
-## 🛠️ Requisitos Prévios
+Antes de começar, certifique-se de que sua VPS está atualizada:
 
-- **Node.js**: Instalado (versão 18+ recomendada)
-- **PostgreSQL**: Instalado nativamente na máquina com um banco criado.
-- **PM2**: Instalador global no Node (`npm install -g pm2`)
+```bash
+sudo apt update && sudo apt upgrade -y
+```
 
-## ⚡ Passo a Passo para Instalação e Execução
+### 1. Instalar Node.js (v18+) e NPM
+```bash
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+```
 
-### 1. Configurar o Backend (Bot)
-Abra um terminal, acesse a pasta `backend-bot` e instale os pacotes:
+### 2. Instalar PostgreSQL (Banco de Dados)
+```bash
+sudo apt install postgresql postgresql-contrib -y
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+**Configurar o usuário e banco:**
+```bash
+# Entrar no terminal do postgres
+sudo -u postgres psql
+
+# Dentro do psql, execute:
+CREATE DATABASE telegram_vip;
+CREATE USER luhan WITH PASSWORD '2026';
+GRANT ALL PRIVILEGES ON DATABASE telegram_vip TO luhan;
+\q
+```
+
+### 3. Instalar PM2 e Nginx
+```bash
+sudo npm install -g pm2
+sudo apt install nginx -y
+```
+
+---
+
+## 📂 Clonar e Configurar o Projeto
+
+Clone seu repositório na VPS:
+```bash
+git clone https://github.com/Luhanvinicius/apex_clone.git
+cd apex_clone
+```
+
+### 1. Configurar o Backend
 ```bash
 cd backend-bot
 npm install
+cp .env.example .env
+nano .env
 ```
+*No arquivo `.env`, ajuste as credenciais do banco (DB_USER=luhan, DB_PASSWORD=2026, DB_NAME=telegram_vip) e insira seu `BOT_TOKEN`.*
 
-Crie (ou edite) o arquivo `.env` dentro de `backend-bot` com os dados do seu bot:
-```env
-BOT_TOKEN=SEU_TOKEN_DO_BOTFATHER
-PORT=5001
-VIP_GROUP_ID=-100000000000
-```
-*O Sequelize usa as variáveis `DB_*` do `.env` para conectar no PostgreSQL.*
-
-### 2. Configurar o Frontend (Painel Web)
-Em outro terminal (ou retorne para a pasta principal), acesse a pasta `frontend-admin` e faça a instalação e build:
+### 2. Configurar o Frontend
 ```bash
-cd frontend-admin
+cd ../frontend-admin
 npm install
 npm run build
 ```
 
-### 3. Rodando tudo com o PM2 (Recomendado para Produção/VPS)
-Na pasta principal do projeto do projeto (onde está o arquivo `ecosystem.config.js`), execute o PM2 para iniciar os dois projetos de uma vez em background:
+---
 
+## ⚡ Execução com PM2
+
+Retorne à raiz do projeto (onde está o `ecosystem.config.js`):
 ```bash
-npm install -g pm2        # Se ainda não instalou o PM2
+cd ..
 pm2 start ecosystem.config.js
-```
-
-Para visualizar os logs e verificar se está rodando:
-```bash
-pm2 logs
-pm2 monit
-```
-
-**Para salvar os processos de serem interrompidos se o servidor reiniciar:**
-```bash
 pm2 save
 pm2 startup
 ```
+*Siga as instruções que o comando `pm2 startup` exibir no terminal para garantir que o sistema inicie após um reboot.*
 
-## 🌐 Acessos
+---
 
-- **Painel Administrativo:** `http://localhost:3000` ou `http://IP_DA_VPS:3000`
-- **Bot no Telegram:** @SeuBot
+## 🌐 Configuração do Proxy Reverso (Nginx)
 
-No Painel, você criará os Planos, definirá textos de Boas Vindas e os Usuários poderão comprar iniciando a conversa com o bot enviando `/start`.
+Para que o sistema seja acessível via domínio e tenha SSL (HTTPS), configure o Nginx:
 
-## 🧪 Teste real com Telegram
+```bash
+sudo nano /etc/nginx/sites-available/telegram-bot
+```
 
-Para teste completo com token real do BotFather e criação de admin inicial, siga:
+Cole o conteúdo abaixo (ajuste o seu domínio):
 
-- `documentacao/teste-real-telegram.md`
+```nginx
+server {
+    listen 80;
+    server_name seu-dominio.com;
+
+    # Frontend Admin
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # API Backend
+    location /api {
+        proxy_pass http://localhost:5001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+Ative o site e reinicie o Nginx:
+```bash
+sudo ln -s /etc/nginx/sites-available/telegram-bot /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+---
+
+## 🔒 Segurança (SSL & Firewall)
+
+### 1. Instalar SSL (Certbot)
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d seu-dominio.com
+```
+
+### 2. Firewall (UFW)
+```bash
+sudo ufw allow 'Nginx Full'
+sudo ufw allow 22
+sudo ufw enable
+```
+
+---
+
+## 📜 Comandos Úteis na VPS
+
+- **Ver Logs:** `pm2 logs`
+- **Ver Status:** `pm2 status`
+- **Reiniciar Sistema:** `pm2 restart all`
+- **Logs do Nginx:** `sudo tail -f /var/log/nginx/error.log`
+
+---
+
+## 🧪 Teste inicial de Admin
+Se precisar forçar a criação de um admin após o deploy:
+```bash
+cd backend-bot
+node force-admin.js
+```
