@@ -1,0 +1,9 @@
+{
+  "ignore": [
+    "session*.json",
+    "runtime/**/*",
+    "*.txt",
+    "*.pcap",
+    "public/**/*"
+  ]
+}

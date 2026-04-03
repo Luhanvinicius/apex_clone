@@ -1,7 +1,6 @@
 node_modules
 .next
 .env
-*.json
 package-lock.json
 public/qrcode
 session_*.json
