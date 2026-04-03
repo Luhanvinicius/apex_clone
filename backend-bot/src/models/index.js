@@ -7,6 +7,7 @@ const Config = require('./Config');
 const Source = require('./Source');
 const Redirect = require('./Redirect');
 const Admin = require('./Admin');
+const Activity = require('./Activity');
 
 // Relations
 User.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
@@ -26,7 +27,8 @@ Source.belongsTo(Config, { foreignKey: 'configId', as: 'config' });
 Config.hasMany(User, { foreignKey: 'configId' });
 Config.hasMany(Plan, { foreignKey: 'configId' });
 Config.hasMany(Payment, { foreignKey: 'configId' });
-Config.hasMany(Source, { foreignKey: 'configId' });
+Config.hasMany(Activity, { foreignKey: 'configId' });
+Activity.belongsTo(Config, { foreignKey: 'configId' });
 
 module.exports = {
   sequelize,
@@ -36,5 +38,6 @@ module.exports = {
   Config,
   Source,
   Redirect,
-  Admin
+  Admin,
+  Activity
 };

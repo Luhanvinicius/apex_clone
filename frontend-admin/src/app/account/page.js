@@ -23,7 +23,7 @@ import {
   UserCircle2
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = '/api';
 const STORAGE_KEY = 'apex_clone_account_state_v2';
 const sectionClass = 'rounded-[18px] border border-white/[0.08] bg-gradient-to-r from-[#1f2024] via-[#25262a] to-[#1f2024] p-6 md:p-7';
 const fieldClass = 'h-14 rounded-[12px] border border-white/[0.05] bg-[#181a1f] px-4 flex items-center gap-3 text-white/90';

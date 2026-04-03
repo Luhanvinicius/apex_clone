@@ -11,7 +11,7 @@ export default function SetupPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('http://localhost:5001/api/register-initial', { username, password });
+      await axios.post('/api/register-initial', { username, password });
       alert('Administrador inicial criado com sucesso!');
       window.location.href = '/login';
     } catch (e) {

@@ -3,8 +3,32 @@ const router = express.Router();
 const { User, Plan, Payment, Config, Source, Redirect, Admin, sequelize } = require('../models');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const botManager = require('../bot/manager');
 const PaymentService = require('../services/PaymentService');
+
+// Configuração do multer para upload de arquivos
+const uploadDir = path.resolve(__dirname, '../../../frontend-admin/public/uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const originalName = path.basename(file.originalname, ext);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `${originalName}-${uniqueSuffix}${ext}`.toLowerCase());
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || 'apex-vips-ultra-secret-2026';
 const ACCOUNT_DEFAULT_PREFERENCES = {
@@ -272,6 +296,7 @@ router.put('/account', authenticate, async (req, res) => {
 router.get('/stats', async (req, res) => {
   const { botId } = req.query;
   const whereCl = botId ? { configId: botId } : {};
+  const paymentWhereCl = botId ? { configId: botId, status: 'approved' } : { status: 'approved' };
 
   try {
     const today = new Date();
@@ -280,38 +305,83 @@ router.get('/stats', async (req, res) => {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0,0,0,0);
 
+    const usersToday = await User.count({ where: { ...whereCl, createdAt: { [Op.gte]: today } } });
+    const usersMonth = await User.count({ where: { ...whereCl, createdAt: { [Op.gte]: startOfMonth } } });
     const usersCount = await User.count({ where: whereCl });
     const activeUsers = await User.count({ where: { ...whereCl, status: 'active' } });
-    const expiredUsers = await User.count({ where: { ...whereCl, status: 'expired' } });
-    const blockedUsers = 0;
+    const blockedUsersCount = await User.count({ where: { ...whereCl, status: 'blocked_bot' } });
     const subscriptionsCount = activeUsers;
 
     // Métricas de Vendas (Hoje)
-    const salesToday = await Payment.count({ where: { ...whereCl, status: 'approved', createdAt: { [Op.gte]: today } } });
-    const revenueToday = await Payment.sum('amount', { where: { ...whereCl, status: 'approved', createdAt: { [Op.gte]: today } } }) || 0;
+    const salesToday = await Payment.count({ where: { ...paymentWhereCl, createdAt: { [Op.gte]: today } } });
+    const revenueToday = await Payment.sum('amount', { where: { ...paymentWhereCl, createdAt: { [Op.gte]: today } } }) || 0;
 
     // Métricas de Vendas (Mês)
-    const salesMonth = await Payment.count({ where: { ...whereCl, status: 'approved', createdAt: { [Op.gte]: startOfMonth } } });
-    const revenueMonth = await Payment.sum('amount', { where: { ...whereCl, status: 'approved', createdAt: { [Op.gte]: startOfMonth } } }) || 0;
+    const salesMonth = await Payment.count({ where: { ...paymentWhereCl, createdAt: { [Op.gte]: startOfMonth } } });
+    const revenueMonth = await Payment.sum('amount', { where: { ...paymentWhereCl, createdAt: { [Op.gte]: startOfMonth } } }) || 0;
 
-    // Histórico
+    // Histórico (7 dias)
     const history = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const start = new Date(d).setHours(0,0,0,0);
       const end = new Date(d).setHours(23,59,59,999);
-      const daySales = await Payment.sum('amount', { where: { ...whereCl, status: 'approved', createdAt: { [Op.between]: [start, end] } } }) || 0;
+      const daySales = await Payment.sum('amount', { where: { ...paymentWhereCl, createdAt: { [Op.between]: [start, end] } } }) || 0;
       history.push({ name: d.toISOString().split('T')[0], value: daySales });
     }
 
+    // Conversões e Insights
+    const totalPaymentsCreated = await Payment.count({ where: whereCl });
+    const totalApprovedPayments = await Payment.count({ where: paymentWhereCl });
+    const usersWithApprovedPayments = await Payment.count({
+      distinct: true,
+      col: 'userId',
+      where: paymentWhereCl 
+    });
+
+    const conversionUserTotal = usersCount > 0 ? ((usersWithApprovedPayments / usersCount) * 100).toFixed(2) : 0;
+    const conversionPaymentTotal = totalPaymentsCreated > 0 ? ((totalApprovedPayments / totalPaymentsCreated) * 100).toFixed(2) : 0;
+
+    // Atividade Recente
+    const activities = await Activity.findAll({
+      where: whereCl,
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
+
+    // Agregados por Dispositivo/OS
+    const browserStats = await User.findAll({
+      attributes: ['osBrowser', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+      where: whereCl,
+      group: ['osBrowser'],
+      raw: true
+    });
+
+    const deviceStats = await User.findAll({
+      attributes: ['device', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+      where: whereCl,
+      group: ['device'],
+      raw: true
+    });
+
     res.json({
-      users: { today: 0, month: 0, active: activeUsers, total: usersCount, blocked: blockedUsers, subscriptions: subscriptionsCount },
+      users: { 
+        today: usersToday, 
+        month: usersMonth, 
+        active: activeUsers, 
+        total: usersCount, 
+        blocked: blockedUsersCount, 
+        subscriptions: subscriptionsCount 
+      },
       sales: { today: salesToday, revenueToday, month: salesMonth, revenueMonth },
       history,
+      activities,
+      browserStats,
+      deviceStats,
       conversion: {
-        user: { today: 0, month: 0, total: 0 },
-        payment: { today: 0, month: 0, total: 0 },
+        user: { today: 0, month: 0, total: conversionUserTotal },
+        payment: { today: 0, month: 0, total: conversionPaymentTotal },
         avgTime: { today: 0, month: 0, total: 0 },
         ticket: { today: 0, month: 0, total: salesMonth > 0 ? (revenueMonth / salesMonth).toFixed(2) : 0 }
       }
@@ -451,58 +521,11 @@ router.get('/config', async (req, res) => {
 });
 
 router.post('/config', async (req, res) => {
-  const {
-    id,
-    botToken,
-    botUsername,
-    antiClone,
-    welcomeMessage,
-    welcomeFileId,
-    supportUsername,
-    expiredMessage,
-    reminderMessage,
-    vipGroupId,
-    upsellEnabled,
-    upsellMessage,
-    downsellEnabled,
-    downsellMessage,
-    botExternalId,
-    profileName,
-    profileBio,
-    profileShortMessage,
-    profileImageName,
-    shareKey,
-    configKey,
-    configPublic
-  } = req.body;
+  const { id, botToken, ...rest } = req.body;
   
   console.log('[API] POST /config payload botToken:', botToken);
-  const updateData = {};
-  const assignIfDefined = (key, value) => {
-    if (value !== undefined) updateData[key] = value;
-  };
-
-  assignIfDefined('botToken', botToken);
-  assignIfDefined('botUsername', botUsername);
-  assignIfDefined('antiClone', antiClone);
-  assignIfDefined('welcomeMessage', welcomeMessage);
-  assignIfDefined('welcomeFileId', welcomeFileId);
-  assignIfDefined('supportUsername', supportUsername);
-  assignIfDefined('expiredMessage', expiredMessage);
-  assignIfDefined('reminderMessage', reminderMessage);
-  assignIfDefined('vipGroupId', vipGroupId);
-  assignIfDefined('upsellEnabled', upsellEnabled);
-  assignIfDefined('upsellMessage', upsellMessage);
-  assignIfDefined('downsellEnabled', downsellEnabled);
-  assignIfDefined('downsellMessage', downsellMessage);
-  assignIfDefined('botExternalId', botExternalId);
-  assignIfDefined('profileName', profileName);
-  assignIfDefined('profileBio', profileBio);
-  assignIfDefined('profileShortMessage', profileShortMessage);
-  assignIfDefined('profileImageName', profileImageName);
-  assignIfDefined('shareKey', shareKey);
-  assignIfDefined('configKey', configKey);
-  assignIfDefined('configPublic', configPublic);
+  const updateData = { ...rest };
+  if (botToken) updateData.botToken = botToken;
 
   let bot;
   if (id) {
@@ -541,23 +564,12 @@ router.post('/config', async (req, res) => {
     }
 
     const count = await Config.count();
-    const tempName = botUsername || `Bot Apex #${count + 1}`;
+    const tempName = rest.botUsername || `Bot Apex #${count + 1}`;
     
     bot = await Config.create({ 
+      ...updateData,
       botToken: botToken,
       botUsername: tempName,
-      antiClone: antiClone || false,
-      welcomeMessage: welcomeMessage || 'Welcome to our VIP Bot!',
-      supportUsername: supportUsername || null,
-      upsellEnabled: upsellEnabled !== undefined ? upsellEnabled : true,
-      downsellEnabled: downsellEnabled !== undefined ? downsellEnabled : true,
-      profileName,
-      profileBio,
-      profileShortMessage,
-      profileImageName,
-      shareKey,
-      configKey,
-      configPublic
     });
     console.log('[API] NEW Bot created with ID:', bot.id);
     await botManager.startBot(bot);
@@ -604,6 +616,17 @@ router.post('/broadcast', async (req, res) => {
   }
   
   res.json({ success: true, count });
+});
+
+// --- Upload Route ---
+router.post('/upload', upload.single('file'), (req, res) => {
+  console.log('[API] Processing file upload...');
+  if (!req.file) {
+    console.error('[API] No file received.');
+    return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+  }
+  console.log('[API] File uploaded successfully:', req.file.filename);
+  res.json({ filename: req.file.filename });
 });
 
 module.exports = router;

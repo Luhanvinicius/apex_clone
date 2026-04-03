@@ -11,7 +11,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5001/api/login', { username, password });
+      const res = await axios.post('/api/login', { username, password });
       localStorage.setItem('apex_token', res.data.token);
       window.location.href = '/';
     } catch (e) {

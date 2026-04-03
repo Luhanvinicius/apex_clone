@@ -961,43 +961,41 @@ export default function SettingsPage({ initialTab = 'editar' }) {
       const plansData = Array.isArray(plansResponse.data) ? plansResponse.data : [];
       setPlans(plansData);
 
-      const rawEditUi = localStorage.getItem(getEditBotStorageKey(botId));
-      if (rawEditUi) {
-        try {
-          const parsed = JSON.parse(rawEditUi) || {};
-          setEditBotExtras({ ...buildDefaultEditBotExtras(), ...(parsed.editBotExtras || {}) });
-          setSubscriptionItems(normalizeSubscriptionItems(parsed.subscriptionItems || []));
-          setPackageItems(normalizePackageItems(parsed.packageItems || []));
-          setCustomButtonItems(normalizeSimpleButtons(parsed.customButtonItems || []));
-          setVipButtonItems(normalizeSimpleButtons(parsed.vipButtonItems || []));
-          setSocialProofItems(normalizeSocialProofItems(parsed.socialProofItems || []));
-        } catch {
-          setEditBotExtras(buildDefaultEditBotExtras());
-          setSubscriptionItems(normalizeSubscriptionItems(plansData.map((plan, index) => ({
-            id: makeId('sub'),
-            title: `Plano ${index + 1}`,
-            name: plan.name || '',
-            price: String(plan.price || ''),
-            duration: plan.durationDays ? `${plan.durationDays} dias` : PLAN_DURATION_OPTIONS[0]
-          }))));
-          setPackageItems([]);
-          setCustomButtonItems([]);
-          setVipButtonItems([]);
-          setSocialProofItems([createSocialProofItem(1)]);
-        }
-      } else {
-        setEditBotExtras(buildDefaultEditBotExtras());
-        setSubscriptionItems(normalizeSubscriptionItems(plansData.map((plan, index) => ({
-          id: makeId('sub'),
-          title: `Plano ${index + 1}`,
-          name: plan.name || '',
-          price: String(plan.price || ''),
-          duration: plan.durationDays ? `${plan.durationDays} dias` : PLAN_DURATION_OPTIONS[0]
-        }))));
-        setPackageItems([]);
-        setCustomButtonItems([]);
-        setVipButtonItems([]);
-        setSocialProofItems([createSocialProofItem(1)]);
+      // Carregamento inteligente (Banco de Dados primeiro, LocalStorage como Fallback)
+      const hasServerData = configData.subscriptionItems && configData.subscriptionItems.length > 0;
+      const rawEditStored = localStorage.getItem(getEditBotStorageKey(botId));
+      let parsedStorage = {};
+      if (rawEditStored) {
+        try { parsedStorage = JSON.parse(rawEditStored) || {}; } catch (e) {}
+      }
+
+      // Prioriza dados vindos do banco de dados (Server-Side Truth)
+      setEditBotExtras({ 
+        ...buildDefaultEditBotExtras(), 
+        ...(configData.editBotExtras || parsedStorage.editBotExtras || {}) 
+      });
+      
+      setSubscriptionItems(normalizeSubscriptionItems(
+        (configData.subscriptionItems && configData.subscriptionItems.length > 0) 
+          ? configData.subscriptionItems 
+          : (parsedStorage.subscriptionItems || plansData.map((plan, index) => ({
+              id: makeId('sub'),
+              title: `Plano ${index + 1}`,
+              name: plan.name || '',
+              price: String(plan.price || ''),
+              duration: plan.durationDays ? `${plan.durationDays} dias` : PLAN_DURATION_OPTIONS[0]
+            })))
+      ));
+
+      setPackageItems(normalizePackageItems(configData.packageItems || parsedStorage.packageItems || []));
+      setCustomButtonItems(normalizeSimpleButtons(configData.customButtonItems || parsedStorage.customButtonItems || []));
+      setVipButtonItems(normalizeSimpleButtons(configData.vipButtonItems || parsedStorage.vipButtonItems || []));
+      setSocialProofItems(normalizeSocialProofItems(configData.socialProofItems || parsedStorage.socialProofItems || [createSocialProofItem(1)]));
+
+      // Configuração de Aprovação Automática agora do Banco
+      if (configData.autoApprovalChannels) {
+        setAutoApprovalChannels(configData.autoApprovalChannels);
+        setAutoApprovalEnabled(Boolean(configData.autoApprovalEnabled));
       }
     } catch (error) {
       console.error(error);
@@ -1006,6 +1004,25 @@ export default function SettingsPage({ initialTab = 'editar' }) {
       setLoading(false);
     }
   }
+
+  const handleFileUpload = async (file, callback) => {
+    if (!file) return;
+    setStatusMessage({ type: 'info', text: 'Subindo arquivo... Por favor, aguarde.' });
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await axios.post('/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      if (res.data.filename) {
+        callback(res.data.filename);
+        setStatusMessage({ type: 'success', text: `Arquivo ${file.name} enviado com sucesso!` });
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setStatusMessage({ type: 'error', text: 'Erro ao fazer upload do arquivo. Verifique o tamanho (máx 50MB).' });
+    }
+  };
 
   function handleConfigChange(field, value) {
     setConfig((previous) => ({ ...previous, [field]: value }));
@@ -1512,7 +1529,25 @@ export default function SettingsPage({ initialTab = 'editar' }) {
         upsellEnabled: config.upsellEnabled,
         upsellMessage: firstUpsellMessage,
         downsellEnabled: config.downsellEnabled,
-        downsellMessage: firstDownsellMessage
+        downsellMessage: firstDownsellMessage,
+        // Novos campos faltantes
+        editBotExtras,
+        subscriptionItems,
+        packageItems,
+        customButtonItems,
+        vipButtonItems,
+        socialProofItems,
+        autoApprovalEnabled,
+        autoApprovalChannels,
+        leadCaptureEnabled,
+        leadCaptureMoment,
+        leadCaptureBeforeText,
+        leadCaptureAfterText,
+        leadCaptureErrorText,
+        leadCaptureButtonText,
+        leadCaptureMediaName,
+        leadCaptureAudioName,
+        paymentGateways: config.paymentGateways
       });
       persistDownsellMessages(selectedBotId, downsellMessages);
       persistUpsellUi(selectedBotId, { messages: upsellMessages, sendMode: upsellSendMode });
@@ -1650,7 +1685,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
           <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
             <FolderOpen size={16} className="text-blue-400" />
             Adicionar Mídia
-            <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => setMediaFileName(event.target.files?.[0]?.name || '')} />
+            <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleConfigChange('mediaFileName', fname))} />
           </label>
           {mediaFileName && <p className="text-[0.95rem] text-white/75">{mediaFileName}</p>}
           <div>
@@ -1665,7 +1700,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
           <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
             <FolderOpen size={16} className="text-blue-400" />
             Escolher Áudio
-            <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => setAudioFileName(event.target.files?.[0]?.name || '')} />
+            <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleConfigChange('audioFileName', fname))} />
           </label>
           {audioFileName && <p className="text-[0.95rem] text-white/75">{audioFileName}</p>}
         </div>
@@ -1787,7 +1822,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                                 <FolderOpen size={16} className="text-blue-400" />
                                 Escolher Mídia
-                                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => updateSubscriptionItem(item.id, 'orderBumpMediaFileName', event.target.files?.[0]?.name || '')} />
+                                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateSubscriptionItem(item.id, 'orderBumpMediaFileName', fname))} />
                               </label>
                               {item.orderBumpMediaFileName && <p className="mt-1 text-[0.95rem] text-white/75">{item.orderBumpMediaFileName}</p>}
                             </div>
@@ -1796,7 +1831,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                                 <FolderOpen size={16} className="text-blue-400" />
                                 Escolher Áudio
-                                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => updateSubscriptionItem(item.id, 'orderBumpAudioFileName', event.target.files?.[0]?.name || '')} />
+                                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateSubscriptionItem(item.id, 'orderBumpAudioFileName', fname))} />
                               </label>
                               {item.orderBumpAudioFileName && <p className="mt-1 text-[0.95rem] text-white/75">{item.orderBumpAudioFileName}</p>}
                             </div>
@@ -1834,7 +1869,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               )}
             </div>
           </div>
-          <div className="pt-3"><SectionActionButtons /></div>
+          <div className="pt-3"><SectionActionButtons onConfirm={handleSave} onCancel={fetchData} /></div>
         </section>
 
         <section>
@@ -1931,7 +1966,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                                 <FolderOpen size={16} className="text-blue-400" />
                                 Escolher Mídia
-                                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => updatePackageItem(item.id, 'orderBumpMediaFileName', event.target.files?.[0]?.name || '')} />
+                                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updatePackageItem(item.id, 'orderBumpMediaFileName', fname))} />
                               </label>
                               {item.orderBumpMediaFileName && <p className="mt-1 text-[0.95rem] text-white/75">{item.orderBumpMediaFileName}</p>}
                             </div>
@@ -1940,7 +1975,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                                 <FolderOpen size={16} className="text-blue-400" />
                                 Escolher Áudio
-                                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => updatePackageItem(item.id, 'orderBumpAudioFileName', event.target.files?.[0]?.name || '')} />
+                                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updatePackageItem(item.id, 'orderBumpAudioFileName', fname))} />
                               </label>
                               {item.orderBumpAudioFileName && <p className="mt-1 text-[0.95rem] text-white/75">{item.orderBumpAudioFileName}</p>}
                             </div>
@@ -1978,7 +2013,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               )}
             </div>
           </div>
-          <div className="pt-3"><SectionActionButtons /></div>
+          <div className="pt-3"><SectionActionButtons onConfirm={handleSave} onCancel={fetchData} /></div>
         </section>
 
         <section>
@@ -2021,7 +2056,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               )}
             </div>
           </div>
-          <div className="pt-3"><SectionActionButtons /></div>
+          <div className="pt-3"><SectionActionButtons onConfirm={handleSave} onCancel={fetchData} /></div>
         </section>
 
         <section>
@@ -2048,7 +2083,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                 <FolderOpen size={16} className="text-blue-400" />
                 Escolher Mídia
-                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleEditBotExtraChange('vipAccessMediaName', event.target.files?.[0]?.name || '')} />
+                <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleEditBotExtraChange('vipAccessMediaName', fname))} />
               </label>
               {editBotExtras.vipAccessMediaName && <p className="mt-1 text-[0.95rem] text-white/75">{editBotExtras.vipAccessMediaName}</p>}
             </div>
@@ -2057,7 +2092,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                 <FolderOpen size={16} className="text-blue-400" />
                 Escolher Áudio
-                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleEditBotExtraChange('vipAccessAudioName', event.target.files?.[0]?.name || '')} />
+                <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleEditBotExtraChange('vipAccessAudioName', fname))} />
               </label>
               {editBotExtras.vipAccessAudioName && <p className="mt-1 text-[0.95rem] text-white/75">{editBotExtras.vipAccessAudioName}</p>}
             </div>
@@ -2129,7 +2164,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
               </div>
             ))}
           </div>
-          <div className="mt-4"><SectionActionButtons /></div>
+          <div className="mt-4"><SectionActionButtons onConfirm={handleSave} onCancel={fetchData} /></div>
         </section>
 
         <section>
@@ -2154,7 +2189,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
           <div className="mt-3 rounded-[10px] border border-[#8d651b] bg-[#4b3b22]/55 px-4 py-3 text-[#f2b321]">
             <p className="text-[1rem] inline-flex items-center gap-2"><AlertCircle size={16} />Dica: Se você percebeu queda de conversão sem mudança no funil, vale muito testar essa função!</p>
           </div>
-          <div className="mt-4"><SectionActionButtons /></div>
+          <div className="mt-4"><SectionActionButtons onConfirm={handleSave} onCancel={fetchData} /></div>
         </section>
 
         <section>
@@ -2307,7 +2342,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                 <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                   <FolderOpen size={16} className="text-blue-400" />
                   Escolher Mídia
-                  <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleEditBotExtraChange('pixMediaName', event.target.files?.[0]?.name || '')} />
+                  <input type="file" accept="image/png,image/jpeg,image/jpg,video/mp4" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleEditBotExtraChange('pixMediaName', fname))} />
                 </label>
               </div>
               <div>
@@ -2315,7 +2350,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                 <label className="h-[42px] px-4 rounded-[10px] border border-white/20 bg-white/[0.06] text-white text-[1rem] font-semibold inline-flex items-center gap-2 cursor-pointer hover:bg-white/[0.1] transition w-fit">
                   <FolderOpen size={16} className="text-blue-400" />
                   Escolher Áudio
-                  <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleEditBotExtraChange('pixAudioName', event.target.files?.[0]?.name || '')} />
+                  <input type="file" accept="audio/ogg" className="hidden" onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleEditBotExtraChange('pixAudioName', fname))} />
                 </label>
               </div>
             </div>
@@ -2508,7 +2543,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                         type="file"
                         accept="image/png,image/jpeg,image/jpg,video/mp4"
                         className="hidden"
-                        onChange={(event) => handleDownsellMessageChange(message.id, 'mediaName', event.target.files?.[0]?.name || '')}
+                        onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleDownsellMessageChange(message.id, 'mediaName', fname))}
                       />
                     </label>
                     {message.mediaName && <p className="mt-1 text-[0.9rem] text-white/75">{message.mediaName}</p>}
@@ -2522,7 +2557,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                         type="file"
                         accept="audio/ogg"
                         className="hidden"
-                        onChange={(event) => handleDownsellMessageChange(message.id, 'audioName', event.target.files?.[0]?.name || '')}
+                        onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleDownsellMessageChange(message.id, 'audioName', fname))}
                       />
                     </label>
                     {message.audioName && <p className="mt-1 text-[0.9rem] text-white/75">{message.audioName}</p>}
@@ -2652,7 +2687,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                         type="file"
                         accept="image/png,image/jpeg,image/jpg,video/mp4"
                         className="hidden"
-                        onChange={(event) => handleUpsellMessageChange(message.id, 'mediaName', event.target.files?.[0]?.name || '')}
+                        onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleUpsellMessageChange(message.id, 'mediaName', fname))}
                       />
                     </label>
                     {message.mediaName && <p className="mt-1 text-[1.4rem] text-white/75">{message.mediaName}</p>}
@@ -2666,7 +2701,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                         type="file"
                         accept="audio/ogg"
                         className="hidden"
-                        onChange={(event) => handleUpsellMessageChange(message.id, 'audioName', event.target.files?.[0]?.name || '')}
+                        onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => handleUpsellMessageChange(message.id, 'audioName', fname))}
                       />
                     </label>
                     {message.audioName && <p className="mt-1 text-[1.4rem] text-white/75">{message.audioName}</p>}
@@ -2981,7 +3016,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                       type="file"
                       accept="image/png,image/jpeg,image/jpg,video/mp4"
                       className="hidden"
-                      onChange={(event) => updateAutoApprovalChannel(channel.id, 'mediaName', event.target.files?.[0]?.name || '')}
+                      onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateAutoApprovalChannel(channel.id, 'mediaName', fname))}
                     />
                   </label>
                   {channel.mediaName && <p className="mt-1 text-[0.95rem] text-white/75">{channel.mediaName}</p>}
@@ -2995,7 +3030,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                       type="file"
                       accept="audio/ogg"
                       className="hidden"
-                      onChange={(event) => updateAutoApprovalChannel(channel.id, 'audioName', event.target.files?.[0]?.name || '')}
+                      onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateAutoApprovalChannel(channel.id, 'audioName', fname))}
                     />
                   </label>
                   {channel.audioName && <p className="mt-1 text-[0.95rem] text-white/75">{channel.audioName}</p>}
@@ -3068,7 +3103,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                 </div>
               </div>
               <div className="mt-3 flex justify-end">
-                <SectionActionButtons />
+                <SectionActionButtons onConfirm={handleSave} onCancel={fetchData} />
               </div>
             </section>
           ))}
@@ -3172,7 +3207,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,video/mp4"
                   className="hidden"
-                  onChange={(event) => setLeadCaptureMediaName(event.target.files?.[0]?.name || '')}
+                  onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => setLeadCaptureMediaName(fname))}
                 />
               </label>
               {leadCaptureMediaName && <p className="mt-1 text-[0.95rem] text-white/75">{leadCaptureMediaName}</p>}
@@ -3186,7 +3221,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                   type="file"
                   accept="audio/ogg"
                   className="hidden"
-                  onChange={(event) => setLeadCaptureAudioName(event.target.files?.[0]?.name || '')}
+                  onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => setLeadCaptureAudioName(fname))}
                 />
               </label>
               {leadCaptureAudioName && <p className="mt-1 text-[0.95rem] text-white/75">{leadCaptureAudioName}</p>}
@@ -3425,7 +3460,7 @@ export default function SettingsPage({ initialTab = 'editar' }) {
                           type="file"
                           accept="image/png,image/jpeg"
                           className="hidden"
-                          onChange={(event) => setProfileImageName(event.target.files?.[0]?.name || '')}
+                          onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => setProfileImageName(fname))}
                         />
                       </label>
                       <div className="text-[0.9rem] text-white/60">

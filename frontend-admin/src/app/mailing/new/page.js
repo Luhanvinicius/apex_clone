@@ -137,6 +137,25 @@ export default function NewMailingPage() {
     }
   }
 
+  const handleFileUpload = async (file, callback) => {
+    if (!file) return;
+    setStatusMessage({ type: 'info', text: 'Subindo arquivo... Por favor, aguarde.' });
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await axios.post('/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      if (res.data.filename) {
+        callback(res.data.filename);
+        setStatusMessage({ type: 'success', text: `Arquivo ${file.name} enviado com sucesso!` });
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setStatusMessage({ type: 'error', text: 'Erro ao fazer upload do arquivo. Verifique o tamanho (máx 50MB).' });
+    }
+  };
+
   const audienceStats = useMemo(() => {
     const planIncludes = (user, keyword) => String(user?.plan?.name || '').toLowerCase().includes(keyword);
     const active = users.filter((user) => user.status === 'active').length;
@@ -562,7 +581,7 @@ export default function NewMailingPage() {
                                 type="file"
                                 accept="image/png,image/jpeg,image/jpg,video/mp4"
                                 className="hidden"
-                                onChange={(event) => updateSubscriptionPlan(plan.id, 'orderBumpMediaFileName', event.target.files?.[0]?.name || '')}
+                                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateSubscriptionPlan(plan.id, 'orderBumpMediaFileName', fname))}
                               />
                               <label
                                 htmlFor={`sub-order-bump-media-${plan.id}`}
@@ -582,7 +601,7 @@ export default function NewMailingPage() {
                                 type="file"
                                 accept="audio/ogg"
                                 className="hidden"
-                                onChange={(event) => updateSubscriptionPlan(plan.id, 'orderBumpAudioFileName', event.target.files?.[0]?.name || '')}
+                                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updateSubscriptionPlan(plan.id, 'orderBumpAudioFileName', fname))}
                               />
                               <label
                                 htmlFor={`sub-order-bump-audio-${plan.id}`}
@@ -748,7 +767,7 @@ export default function NewMailingPage() {
                                 type="file"
                                 accept="image/png,image/jpeg,image/jpg,video/mp4"
                                 className="hidden"
-                                onChange={(event) => updatePackagePlan(plan.id, 'orderBumpMediaFileName', event.target.files?.[0]?.name || '')}
+                                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updatePackagePlan(plan.id, 'orderBumpMediaFileName', fname))}
                               />
                               <label
                                 htmlFor={`pkg-order-bump-media-${plan.id}`}
@@ -768,7 +787,7 @@ export default function NewMailingPage() {
                                 type="file"
                                 accept="audio/ogg"
                                 className="hidden"
-                                onChange={(event) => updatePackagePlan(plan.id, 'orderBumpAudioFileName', event.target.files?.[0]?.name || '')}
+                                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => updatePackagePlan(plan.id, 'orderBumpAudioFileName', fname))}
                               />
                               <label
                                 htmlFor={`pkg-order-bump-audio-${plan.id}`}
@@ -869,7 +888,7 @@ export default function NewMailingPage() {
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,video/mp4"
                 className="hidden"
-                onChange={(event) => setMediaFileName(event.target.files?.[0]?.name || '')}
+                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => setMediaFileName(fname))}
               />
               <button
                 type="button"
@@ -888,7 +907,7 @@ export default function NewMailingPage() {
                 type="file"
                 accept="audio/ogg"
                 className="hidden"
-                onChange={(event) => setAudioFileName(event.target.files?.[0]?.name || '')}
+                onChange={(event) => handleFileUpload(event.target.files?.[0], (fname) => setAudioFileName(fname))}
               />
               <button
                 type="button"

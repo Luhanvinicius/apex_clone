@@ -19,11 +19,15 @@ const Payment = sequelize.define('Payment', {
   },
   planId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'Plans',
       key: 'id'
     }
+  },
+  dynamicPlanId: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   amount: {
     type: DataTypes.FLOAT,

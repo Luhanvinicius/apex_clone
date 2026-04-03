@@ -45,7 +45,7 @@ export default function PlansPage() {
         return;
       }
 
-      const res = await axios.get(`http://localhost:5001/api/plans?botId=${botId}`);
+      const res = await axios.get(`/api/plans?botId=${botId}`);
       setPlans(res.data);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -57,9 +57,9 @@ export default function PlansPage() {
     if (!botId) return alert('Selecione um bot primeiro.');
     try {
       if (editingId) {
-        await axios.put(`http://localhost:5001/api/plans/${editingId}`, form);
+        await axios.put(`/api/plans/${editingId}`, form);
       } else {
-        await axios.post(`http://localhost:5001/api/plans?botId=${botId}`, form);
+        await axios.post(`/api/plans?botId=${botId}`, form);
       }
       setForm({ name: '', price: '', durationDays: '', description: '' });
       setEditingId(null);

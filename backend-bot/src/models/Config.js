@@ -40,7 +40,32 @@ const Config = sequelize.define('Config', {
   profileImageName: { type: DataTypes.STRING },
   shareKey: { type: DataTypes.STRING },
   configKey: { type: DataTypes.STRING },
-  configPublic: { type: DataTypes.BOOLEAN, defaultValue: false }
+  configPublic: { type: DataTypes.BOOLEAN, defaultValue: false },
+
+  // Novas configurações do Frontend
+  downsellMessages: { type: DataTypes.JSONB, defaultValue: [] },
+  upsellMessages: { type: DataTypes.JSONB, defaultValue: [] },
+  upsellSendMode: { type: DataTypes.STRING },
+  saleCodesRestricted: { type: DataTypes.BOOLEAN, defaultValue: false },
+  allowedSaleCodes: { type: DataTypes.JSONB, defaultValue: [] },
+  editBotExtras: { type: DataTypes.JSONB, defaultValue: {} },
+  subscriptionItems: { type: DataTypes.JSONB, defaultValue: [] },
+  packageItems: { type: DataTypes.JSONB, defaultValue: [] },
+  customButtonItems: { type: DataTypes.JSONB, defaultValue: [] },
+  vipButtonItems: { type: DataTypes.JSONB, defaultValue: [] },
+  socialProofItems: { type: DataTypes.JSONB, defaultValue: [] },
+  autoApprovalEnabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  autoApprovalChannels: { type: DataTypes.JSONB, defaultValue: [] },
+  leadCaptureEnabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  leadCaptureMoment: { type: DataTypes.STRING },
+  leadCaptureBeforeText: { type: DataTypes.TEXT },
+  leadCaptureAfterText: { type: DataTypes.TEXT },
+  leadCaptureErrorText: { type: DataTypes.TEXT },
+  leadCaptureButtonText: { type: DataTypes.STRING },
+  leadCaptureMediaName: { type: DataTypes.STRING },
+  leadCaptureAudioName: { type: DataTypes.STRING },
+  paymentGateways: { type: DataTypes.JSONB, defaultValue: [] },
+  paymentRouting: { type: DataTypes.JSONB, defaultValue: [] }
 });
 
 module.exports = Config;

@@ -3,26 +3,30 @@ const LocalSession = require('telegraf-session-local');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
-const { User, Plan, Config, Source, Payment } = require('../models');
+const { User, Plan, Config, Source, Payment, Activity } = require('../models');
 const PaymentService = require('../services/PaymentService');
 const TelegramService = require('../services/TelegramService');
 
 function createBot(config) {
+  const parsePrice = (val) => {
+    if (typeof val === 'number') return val;
+    const clean = String(val || '0').replace(',', '.').replace(/[^0-9.]/g, '');
+    return parseFloat(clean) || 0;
+  };
+
   const bot = new Telegraf(config.botToken);
   const sessionDirectory = path.resolve(__dirname, '../../runtime/sessions');
   fs.mkdirSync(sessionDirectory, { recursive: true });
   
-  // Custom storage for session since multiple bots share the same database
   bot.use((new LocalSession({
     database: path.join(sessionDirectory, `session_${config.id}.json`)
   })).middleware());
 
   bot.use(async (ctx, next) => {
     const chatId = ctx.chat?.id || 'sem-chat';
-    const chatType = ctx.chat?.type || 'sem-tipo';
     const fromId = ctx.from?.id || 'sem-from';
     const text = ctx.message?.text || ctx.callbackQuery?.data || ctx.updateType;
-    console.log(`📨 [${config.botUsername}] update chat=${chatId} type=${chatType} from=${fromId} payload=${text}`);
+    console.log(`📨 [${config.botUsername}] update chat=${chatId} from=${fromId} payload=${text}`);
     return next();
   });
 
@@ -30,198 +34,337 @@ function createBot(config) {
     console.error(`❌ [${config.botUsername}] erro no update ${ctx.updateType}:`, err.message);
   });
 
-  // Helper: Main Menu Keyboard
-  const mainMenu = () => Markup.keyboard([
-    ['💎 Assinar VIP', '👤 Meu Perfil'],
-    ['💬 Suporte', '❓ FAQ/Ajuda']
-  ]).resize();
-
-  // Start command
   bot.start(async (ctx) => {
-    console.log(`▶️ [${config.botUsername}] /start recebido em chat=${ctx.chat?.id} tipo=${ctx.chat?.type}`);
     const telegramId = String(ctx.from.id);
     const utm = ctx.startPayload;
     
-    let user = await User.findOne({ where: { telegramId, configId: config.id } });
-    
+    let user = await User.findOne({ where: { telegramId } });
     if (!user) {
-      user = await User.create({
-        telegramId,
-        firstName: ctx.from.first_name,
-        lastName: ctx.from.last_name,
-        username: ctx.from.username,
-        sourceUtm: utm || null,
-        configId: config.id
-      });
-      
-      if (utm) {
-        const source = await Source.findOne({ where: { utm, configId: config.id } });
-        if (source) {
-          await source.increment('clicks');
-          await source.increment('leads');
+      try {
+        user = await User.create({ telegramId, firstName: ctx.from.first_name, lastName: ctx.from.last_name, username: ctx.from.username, sourceUtm: utm || null, configId: config.id });
+      } catch (err) {
+        user = await User.findOne({ where: { telegramId } });
+      }
+    }
+
+    let welcomeMsg = config.welcomeMessage || `Olá {first_name}! Bem-vindo ao nosso Bot VIP. 🚀`;
+    welcomeMsg = welcomeMsg.replace(/{first_name}/g, ctx.from.first_name);
+
+    const allItems = [...(config.subscriptionItems || []), ...(config.packageItems || [])];
+    const plans = allItems.length > 0 ? allItems : await Plan.findAll({ where: { active: true, configId: config.id } });
+
+    if (plans.length > 0) {
+      const keyboard = plans.map(p => [
+        Markup.button.callback(`${p.name} por R$${parsePrice(p.price || p.value).toFixed(2).replace('.', ',')}`, `buy_${p.id}`)
+      ]);
+      await ctx.reply(welcomeMsg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+    } else {
+      await ctx.reply(welcomeMsg, { parse_mode: 'HTML' });
+    }
+  });
+
+  // Flow Centralizado de Vendas (Bump/Upsell)
+  async function handleCheckUpsell(ctx, planId) {
+    try {
+      const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      const freshConfig = await Config.findByPk(config.id);
+      const useConfig = freshConfig || config;
+      const extras = useConfig.editBotExtras || {};
+
+      let plan = isUUID(planId) ? await Plan.findByPk(planId) : null;
+      if (!plan) {
+        const allItems = [...(useConfig.subscriptionItems || []), ...(useConfig.packageItems || [])];
+        const item = allItems.find(i => String(i.id) === String(planId));
+        if (item) {
+          plan = { 
+            ...item,
+            id: item.id, 
+            name: item.name, 
+            price: parsePrice(item.price || item.value || 0), 
+            durationDays: Number(item.durationDays || item.time || 0)
+          };
         }
       }
-    } else if (utm) {
-       const source = await Source.findOne({ where: { utm, configId: config.id } });
-       if (source) await source.increment('clicks');
-    }
+      if (!plan) throw new Error('Plano não encontrado.');
 
-    await ctx.reply(`Olá ${ctx.from.first_name}! Bem-vindo ao nosso Bot VIP. 🚀\n\nEscolha uma opção no menu abaixo para começar:`, mainMenu());
-    console.log(`✅ [${config.botUsername}] resposta de /start enviada para ${telegramId}`);
-  });
+      // Garantir que o price do plano seja número
+      plan.price = parsePrice(plan.price);
 
-  // Handler: Show Plans
-  const showPlans = async (ctx) => {
-    const telegramId = String(ctx.from.id);
-    const user = await User.findOne({ where: { telegramId, configId: config.id } });
+      // VERIFICA SE O PLANO ESPECÍFICO TEM BUMP (Prioridade Total)
+      const bumpEnabled = plan.orderBumpEnabled === true || plan.orderBumpEnabled === 'true' || plan.orderBumpEnabled === 1;
 
-    if (user.status === 'active') {
-      return ctx.reply('✅ Você já possui uma assinatura ativa! Aproveite o conteúdo.', 
-        Markup.inlineKeyboard([
-          [Markup.button.url('🚀 Acessar Grupo VIP', await TelegramService.getInviteLink(config.vipGroupId, bot))]
-        ])
-      );
-    }
-
-    const plans = await Plan.findAll({ where: { active: true, configId: config.id } });
-    if (!plans.length) {
-      return ctx.reply('No momento não temos planos disponíveis. Tente novamente mais tarde.');
-    }
-
-    const keyboard = plans.map(p => [Markup.button.callback(`${p.name} - R$ ${p.price.toFixed(2)}`, `buy_${p.id}`)]);
-    await ctx.reply(config.welcomeMessage, Markup.inlineKeyboard(keyboard));
-  };
-
-  bot.hears('💎 Assinar VIP', showPlans);
-  bot.command('planos', showPlans);
-
-  // Profile
-  const showProfile = async (ctx) => {
-    const telegramId = String(ctx.from.id);
-    const user = await User.findOne({ where: { telegramId, configId: config.id }, include: ['plan'] });
-
-    if (!user) return ctx.reply('Usuário não encontrado. Digite /start');
-
-    let statusMsg = user.status === 'active' ? '🟢 *Status:* Ativo' : (user.status === 'expired' ? '🔴 *Status:* Expirado' : '⚪ *Status:* Pendente');
-
-    let msg = `👤 *SEU PERFIL*\n\n🆔 *ID:* \`${user.telegramId}\`\n${statusMsg}\n`;
-    if (user.status === 'active' && user.plan) {
-      msg += `💎 *Plano:* ${user.plan.name}\n📅 *Início:* ${user.subscriptionStart.toLocaleDateString('pt-BR')}\n`;
-      msg += user.subscriptionEnd ? `⌛ *Expira em:* ${user.subscriptionEnd.toLocaleDateString('pt-BR')}\n` : `♾ *Expira em:* Vitalício\n`;
-    }
-
-    const buttons = [];
-    if (user.status === 'active') {
-      buttons.push([Markup.button.url('🚀 Acessar Grupo VIP', await TelegramService.getInviteLink(config.vipGroupId, bot))]);
-    } else {
-      buttons.push([Markup.button.callback('💎 Assinar Agora', 'show_plans_inline')]);
-    }
-
-    await ctx.reply(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
-  };
-
-  bot.hears('👤 Meu Perfil', showProfile);
-  bot.command('perfil', showProfile);
-
-  bot.hears('💬 Suporte', async (ctx) => {
-    await ctx.reply('🛠 *SUPORTE TÉCNICO*\n\nClique no botão abaixo para falar com um atendente:', {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([[Markup.button.url('👨‍💻 Falar com Suporte', `https://t.me/${config.supportUsername || 'ApexVips_Suporte'}`)]])
-    });
-  });
-
-  bot.hears('❓ FAQ/Ajuda', async (ctx) => {
-    const msg = `❓ *DÚVIDAS FREQUENTES*\n\n1️⃣ *Como funciona?*\nEscolha um plano e pague via PIX.\n2️⃣ *Seguro?*\nSim, via Wiinpay.\n3️⃣ *Liberação?*\nAutomática em < 1 min.`;
-    await ctx.reply(msg, { parse_mode: 'Markdown' });
-  });
-
-  bot.action('show_plans_inline', showPlans);
-
-  // Buy Action
-  bot.action(/^buy_([0-9a-fA-F-]+)$/, async (ctx) => {
-    const planId = ctx.match[1];
-    const plan = await Plan.findByPk(planId);
-    if (!plan) return ctx.answerCbQuery('Plano não encontrado.');
-
-    const upsellPlan = await Plan.findOne({
-      where: { active: true, configId: config.id, price: { [require('sequelize').Op.gt]: plan.price } },
-      order: [['price', 'ASC']]
-    });
-
-    if (upsellPlan && config.upsellEnabled) {
-      const diff = (upsellPlan.price - plan.price).toFixed(2);
-      let msg = config.upsellMessage.replace(/{diff}/g, diff).replace(/{plan_name}/g, upsellPlan.name).replace(/{plan_price}/g, upsellPlan.price.toFixed(2));
-      await ctx.reply(msg, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [Markup.button.callback(`🚀 SIM! Quero o ${upsellPlan.name}`, `pay_${upsellPlan.id}`)],
-            [Markup.button.callback(`Não, quero apenas o ${plan.name}`, `pay_${plan.id}`)]
+      if (bumpEnabled) {
+        console.log(`🚀 [${useConfig.botUsername}] Order Bump Detectado no Plano: ${plan.name}`);
+        
+        let bumpMsg = plan.orderBumpText || `Voce tem (1) oferta!\n\nTenha Acesso a mais!\nPor Apenas R$ {order_bump_value}`;
+        const targetPrice = parsePrice(plan.orderBumpValue || "4.90");
+        const targetName = plan.orderBumpName || '+ 6 GRUPOS VIPS';
+        const totalPrice = Number(plan.price) + Number(targetPrice);
+        
+        bumpMsg = bumpMsg
+          .replace(/{selected_plan_name}/g, plan.name)
+          .replace(/{order_bump_name}/g, targetName)
+          .replace(/{order_bump_value}/g, targetPrice.toFixed(2).replace('.', ','))
+          .replace(/{total_value}/g, totalPrice.toFixed(2).replace('.', ','));
+        
+        const bumpButtons = [
+          [
+            Markup.button.callback(`✅ SIM, QUERO +6 GRUPOS`, `pay_bump_${plan.id}`),
+            Markup.button.callback(`❌ NÃO, Recusar oferta`, `pay_${plan.id}`)
           ]
+        ];
+
+        const bumpMedia = plan.orderBumpMediaFileName || plan.orderBumpMediaName;
+        if (bumpMedia) {
+           try {
+             let mediaPath = path.resolve(__dirname, `../../../frontend-admin/public/uploads/${bumpMedia}`);
+             console.log(`📂 Buscando mídia do Bump (Plano): ${mediaPath}`);
+             
+             if (!fs.existsSync(mediaPath)) {
+               console.log(`⚠️ Arquivo não encontrado diretamente: ${bumpMedia}. Iniciando busca por padrão...`);
+               const uploadsDir = path.resolve(__dirname, '../../../frontend-admin/public/uploads');
+               if (fs.existsSync(uploadsDir)) {
+                 const files = fs.readdirSync(uploadsDir);
+                 const ext = path.extname(bumpMedia);
+                 const baseName = path.basename(bumpMedia, ext);
+                 
+                 const foundFile = files.find(f => f === bumpMedia || (f.startsWith(baseName) && path.extname(f) === ext));
+                 
+                 if (foundFile) {
+                   mediaPath = path.join(uploadsDir, foundFile);
+                   console.log(`✅ Arquivo encontrado por padrão: ${foundFile}`);
+                 }
+               }
+             }
+
+             if (fs.existsSync(mediaPath)) {
+               const ext = path.extname(mediaPath).toLowerCase();
+               if (ext === '.mp4') {
+                 return await ctx.replyWithVideo({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+               } else if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+                 return await ctx.replyWithPhoto({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+               } else {
+                 return await ctx.replyWithAnimation({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+               }
+             } else {
+                console.error(`❌ ARQUIVO NÃO ENCONTRADO: ${mediaPath}`);
+             }
+           } catch (e) { console.error('🔴 Erro crítico na mídia do Plano:', e.message); }
         }
-      });
-    } else {
-      await handlePaymentScreen(ctx, plan, config);
+        return await ctx.reply(bumpMsg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+      }
+
+      // Se NÃO tiver bump no plano, verifica se tem o Global (Fallback)
+      const globalExtras = useConfig.editBotExtras || {};
+      const globalBumpEnabled = globalExtras.orderBumpEnabled === true || globalExtras.orderBumpEnabled === 'true' || globalExtras.orderBumpEnabled === 1 || globalExtras.orderBumpActive === true || globalExtras.orderBumpActive === 'true' || globalExtras.order_bump_active === true || globalExtras.order_bump_active === 'true' || globalExtras.bumpEnabled === true || globalExtras.bumpEnabled === 'true';
+
+      if (globalBumpEnabled) {
+        const bumpPlanId = globalExtras.orderBumpPlanId || globalExtras.bumpPlanId;
+        let bumpPlan = isUUID(String(bumpPlanId)) ? await Plan.findByPk(bumpPlanId) : null;
+        let targetPlan = bumpPlan;
+        if (!targetPlan && useConfig.upsellEnabled) {
+          targetPlan = await Plan.findOne({ where: { active: true, configId: useConfig.id, price: { [require('sequelize').Op.gt]: plan.price } }, order: [['price', 'ASC']] });
+        }
+
+        let bumpMsg = globalExtras.orderBumpText || globalExtras.bumpText || `Você tem (1) oferta!\n\nTenha Acesso a mais!\nPor Apenas R$ {plan_price}`;
+        const targetPrice = targetPlan ? targetPlan.price : (parseFloat(globalExtras.orderBumpValue || globalExtras.bumpValue) || 4.90);
+        const targetName = targetPlan ? targetPlan.name : (globalExtras.orderBumpName || globalExtras.bumpName || '+ 6 GRUPOS VIPS');
+        bumpMsg = bumpMsg.replace(/{plan_name}/g, targetName).replace(/{plan_price}/g, targetPrice.toFixed(2).replace('.', ',')).replace(/{selected_plan_name}/g, plan.name);
+        
+        const bumpButtons = [
+          [
+            Markup.button.callback(`✅ SIM, QUERO +6 GRUPOS`, `pay_${targetPlan ? targetPlan.id : plan.id}`),
+            Markup.button.callback(`❌ NÃO, Recusar oferta`, `pay_${plan.id}`)
+          ]
+        ];
+
+        const bumpMedia = globalExtras.orderBumpMediaName || globalExtras.bumpMediaName;
+        if (bumpMedia) {
+          try {
+            let mediaPath = path.resolve(__dirname, `../../../frontend-admin/public/uploads/${bumpMedia}`);
+            console.log(`📂 Buscando mídia do Bump (Global): ${mediaPath}`);
+
+            if (!fs.existsSync(mediaPath)) {
+              console.log(`⚠️ Arquivo não encontrado diretamente: ${bumpMedia}. Iniciando busca por padrão...`);
+              const uploadsDir = path.resolve(__dirname, '../../../frontend-admin/public/uploads');
+              if (fs.existsSync(uploadsDir)) {
+                const files = fs.readdirSync(uploadsDir);
+                const ext = path.extname(bumpMedia);
+                const baseName = path.basename(bumpMedia, ext);
+                
+                const foundFile = files.find(f => f === bumpMedia || (f.startsWith(baseName) && path.extname(f) === ext));
+                
+                if (foundFile) {
+                  mediaPath = path.join(uploadsDir, foundFile);
+                  console.log(`✅ Arquivo encontrado por padrão: ${foundFile}`);
+                }
+              }
+            }
+
+            if (fs.existsSync(mediaPath)) {
+              const ext = path.extname(mediaPath).toLowerCase();
+              if (ext === '.mp4') {
+                return await ctx.replyWithVideo({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+              } else if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+                return await ctx.replyWithPhoto({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+              } else {
+                return await ctx.replyWithAnimation({ source: mediaPath }, { caption: bumpMsg, parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+              }
+            }
+          } catch (e) { console.error('🔴 Erro na mídia global:', e.message); }
+        }
+        return await ctx.reply(bumpMsg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(bumpButtons) });
+      }
+
+      await handlePaymentScreen(ctx, plan, useConfig);
+    } catch (err) {
+      console.error(`Erro: ${err.message}`);
+      await ctx.answerCbQuery('Erro ao processar.').catch(() => {});
     }
-    ctx.answerCbQuery().catch(() => {});
-  });
+  }
 
-  bot.action(/^pay_([0-9a-fA-F-]+)$/, async (ctx) => {
+  bot.action(/^buy_([0-9a-zA-Z-]+)$/, async (ctx) => {
     const planId = ctx.match[1];
-    const plan = await Plan.findByPk(planId);
-    if (plan) await handlePaymentScreen(ctx, plan, config);
-    ctx.answerCbQuery().catch(() => {});
-  });
+    const freshConfig = await Config.findByPk(config.id);
+    const useConfig = freshConfig || config;
+    const extras = useConfig.editBotExtras || {};
+    const bumpEnabled = extras.orderBumpEnabled === true || extras.orderBumpEnabled === 'true' || extras.orderBumpEnabled === 1 || extras.orderBumpActive === true || extras.orderBumpActive === 'true' || extras.order_bump_active === true || extras.order_bump_active === 'true' || extras.bumpEnabled === true || extras.bumpEnabled === 'true';
 
-  bot.action(/^cancel_([0-9a-fA-F-]+)$/, async (ctx) => {
-    const planId = ctx.match[1];
-    const canceledPlan = await Plan.findByPk(planId);
-    if (canceledPlan) {
-      const downsellPlan = await Plan.findOne({
-        where: { active: true, configId: config.id, price: { [require('sequelize').Op.lt]: canceledPlan.price } },
-        order: [['price', 'DESC']]
-      });
+    if (bumpEnabled) return handleCheckUpsell(ctx, planId);
 
-      if (downsellPlan && config.downsellEnabled) {
-        let msg = config.downsellMessage.replace(/{plan_name}/g, downsellPlan.name).replace(/{plan_price}/g, downsellPlan.price.toFixed(2));
-        await ctx.reply(msg, {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [Markup.button.callback(`✅ Sim, eu quero o ${downsellPlan.name}!`, `pay_${downsellPlan.id}`)],
-              [Markup.button.callback(`Não, não quero agora.`, `cancel_all`)]
-            ]
-          }
-        });
-        return ctx.answerCbQuery();
+    const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    let plan = isUUID(planId) ? await Plan.findByPk(planId) : null;
+    if (!plan) {
+      const allItems = [...(useConfig.subscriptionItems || []), ...(useConfig.packageItems || [])];
+      const item = allItems.find(i => String(i.id) === String(planId));
+      if (item) {
+        plan = { 
+          id: item.id, 
+          name: item.name, 
+          price: parsePrice(item.price || item.value || 0), 
+          durationDays: Number(item.durationDays || item.time || 0),
+          ...item 
+        };
       }
     }
-    await ctx.reply('Sua compra foi cancelada com sucesso.');
-    ctx.answerCbQuery();
+
+    if (!plan) return ctx.answerCbQuery('Erro ao localizar plano.');
+
+    // VERIFICA SE O PLANO ESPECÍFICO TEM BUMP
+    const planBumpEnabled = plan.orderBumpEnabled === true || plan.orderBumpEnabled === 'true' || plan.orderBumpEnabled === 1;
+
+    if (planBumpEnabled) {
+      console.log(`🚀 [${useConfig.botUsername}] Order Bump Detectado no Plano: ${plan.name} (Gatilho Inicial)`);
+      return handleCheckUpsell(ctx, planId);
+    }
+
+    let msg = extras.pixMethodMessage || `🌟 *Plano selecionado:* {plan_name}\n🎁 *Plano:* {plan_name}\n💰 *Valor:* {plan_value}\n⌛ *Duração:* {plan_duration}\n\nEscolha o método de pagamento abaixo:`;
+    msg = msg.replace(/{plan_name}/g, plan.name).replace(/{plan_value}/g, plan.price.toFixed(2).replace('.', ',')).replace(/{plan_duration}/g, plan.durationDays > 0 ? (plan.durationDays + ' dias') : 'Vitalício');
+    
+    const animation = useConfig.editBotExtras?.upsellMediaName || useConfig.mediaFileName;
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback(extras.pixButtonText || '💠 Pagar com Pix', `check_upsell_${plan.id}`)]]);
+
+    if (animation) {
+      try {
+        const mediaPath = path.resolve(__dirname, `../../../frontend-admin/public/uploads/${animation}`);
+        if (fs.existsSync(mediaPath)) { return await ctx.replyWithAnimation({ source: mediaPath }, { caption: msg, parse_mode: 'Markdown', ...keyboard }); }
+      } catch (e) {}
+    }
+    await ctx.reply(msg, { parse_mode: 'Markdown', ...keyboard });
   });
 
-  bot.action('cancel_all', async (ctx) => {
-    await ctx.reply('Compra cancelada. Até a próxima!');
+  bot.action([/^check_upsell_([0-9a-zA-Z-]+)$/, /^generate_pix_([0-9a-zA-Z-]+)$/], async (ctx) => {
+    return handleCheckUpsell(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^pay_bump_([0-9a-zA-Z-]+)$/, async (ctx) => {
+    const planId = ctx.match[1];
+    const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const freshConfig = await Config.findByPk(config.id);
+    const useConfig = freshConfig || config;
+    let plan = isUUID(planId) ? await Plan.findByPk(planId) : null;
+    if (!plan) {
+      const allItems = [...(useConfig.subscriptionItems || []), ...(useConfig.packageItems || [])];
+      const item = allItems.find(i => String(i.id) === String(planId));
+      if (item) {
+        plan = { 
+          ...item,
+          id: item.id, 
+          name: item.name, 
+          price: parsePrice(item.price || item.value || 0)
+        };
+      }
+    }
+    if (plan) {
+      const bumpPrice = parsePrice(plan.orderBumpValue || "4.90");
+      const totalPrice = Number(plan.price) + Number(bumpPrice);
+      await ctx.answerCbQuery('💎 Oferta aceita! Gerando PIX...').catch(() => {});
+      await handlePaymentScreen(ctx, plan, useConfig, totalPrice);
+    }
+  });
+
+  bot.action(/^pay_([0-9a-zA-Z-]+)$/, async (ctx) => {
+    const planId = ctx.match[1];
+    const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const freshConfig = await Config.findByPk(config.id);
+    const useConfig = freshConfig || config;
+    let plan = isUUID(planId) ? await Plan.findByPk(planId) : null;
+    if (!plan) {
+      const allItems = [...(useConfig.subscriptionItems || []), ...(useConfig.packageItems || [])];
+      const item = allItems.find(i => String(i.id) === String(planId));
+      if (item) {
+        plan = { 
+          ...item,
+          id: item.id, 
+          name: item.name, 
+          price: parsePrice(item.price || item.value || 0)
+        };
+      }
+    }
+    if (plan) {
+      await ctx.answerCbQuery(useConfig.editBotExtras?.paymentGeneratingText || '⌛ Gerando pagamento...').catch(() => {});
+      await handlePaymentScreen(ctx, plan, useConfig);
+    }
+    ctx.answerCbQuery().catch(() => {});
+  });
+
+  async function handlePaymentScreen(ctx, plan, config, amountOverride = null) {
+    const user = await User.findOne({ where: { telegramId: String(ctx.from.id) } });
+    const finalAmount = amountOverride || plan.price;
+    const payment = await PaymentService.createPixPayment(user.id, plan.id, finalAmount);
+    const extras = config.editBotExtras || {};
+    
+    let fullCaption = `🌟 Você selecionou o seguinte plano:\n\n🎁 *Plano:* ${plan.name}${amountOverride ? ' + Oferta Especial' : ''}\n💰 *Valor:* R$${finalAmount.toFixed(2).replace('.', ',')}\n\n💠 Pague via Pix Copia e Cola:\n\n\`${payment.qrCode}\`\n\n👆 Toque na chave PIX acima para copiá-la\n\n‼️ Após o pagamento, clique no botão abaixo para verificar o status:`;
+    const paymentKeyboard = [[Markup.button.callback(extras.pixStatusButtonText || 'Verificar Status do Pagamento ✅', `check_status_${payment.id}`)], [Markup.button.callback(extras.pixCopyButtonText || 'Copiar Chave Pix 📋', `copy_pix_${payment.id}`)]];
+    try {
+      const qrBuffer = await QRCode.toBuffer(payment.qrCode);
+      await ctx.replyWithPhoto({ source: qrBuffer }, { caption: fullCaption, parse_mode: 'Markdown', ...Markup.inlineKeyboard(paymentKeyboard) });
+    } catch (e) {
+      await ctx.reply(fullCaption, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(paymentKeyboard) });
+    }
+  }
+
+  bot.action(/^copy_pix_(.+)$/, async (ctx) => {
+    const payment = await Payment.findByPk(ctx.match[1]);
+    if (payment) { 
+      await ctx.reply(`\`${payment.qrCode}\``, { parse_mode: 'Markdown' });
+      await ctx.reply('✅ *Chave PIX enviada acima!*');
+    }
+    ctx.answerCbQuery().catch(() => {});
+  });
+
+  bot.action(/^check_status_(.+)$/, async (ctx) => {
+    const payment = await Payment.findByPk(ctx.match[1]);
+    if (payment && payment.status === 'approved') { await ctx.reply('✅ *Pagamento Confirmado!*'); }
+    else { await ctx.answerCbQuery('Pagamento ainda pendente.').catch(() => {}); }
+  });
+
+  bot.action(/^cancel_([0-9a-zA-Z-]+)$/, async (ctx) => {
+    await ctx.reply('Sua compra foi cancelada.');
     ctx.answerCbQuery();
   });
 
   return bot;
-}
-
-async function handlePaymentScreen(ctx, plan, config) {
-  const user = await User.findOne({ where: { telegramId: String(ctx.from.id), configId: config.id } });
-  if (!user) return ctx.reply('Digite /start');
-  
-  const payment = await PaymentService.createPixPayment(user.id, plan.id, plan.price);
-  await Payment.update({ configId: config.id }, { where: { id: payment.id } });
-
-  await ctx.reply(`💳 *Plano:* ${plan.name}\n💰 *Valor:* R$ ${plan.price.toFixed(2)}\n\nPague via PIX:`, { parse_mode: 'Markdown' });
-  try {
-    const qrBuffer = await QRCode.toBuffer(payment.qrCode);
-    await ctx.replyWithPhoto({ source: qrBuffer });
-  } catch (e) {}
-  await ctx.reply(`\`${payment.qrCode}\``, { parse_mode: 'Markdown' });
-  await ctx.reply('⏳ Aguardando aprovação...', Markup.inlineKeyboard([[Markup.button.callback('❌ Cancelar', `cancel_${plan.id}`)]]));
 }
 
 module.exports = { createBot };

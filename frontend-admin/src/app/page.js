@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const [viewAllBots, setViewAllBots] = useState(false);
   const [period, setPeriod] = useState("7d");
   const [currentBot, setCurrentBot] = useState(null);
+  const [topThree, setTopThree] = useState([]);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -61,6 +62,9 @@ export default function DashboardPage() {
 
       const requests = [
         axios.get("/api/stats", {
+          params: useAllBots ? {} : { botId }
+        }),
+        axios.get("/api/ranking", {
           params: useAllBots ? {} : { botId }
         })
       ];
@@ -73,12 +77,13 @@ export default function DashboardPage() {
         );
       }
 
-      const [statsRes, botRes] = await Promise.all(requests);
+      const [statsRes, rankingRes, botRes] = await Promise.all(requests);
 
       setStats({
         ...EMPTY_STATS,
         ...(statsRes?.data || {})
       });
+      setTopThree(rankingRes?.data || []);
       setCurrentBot(useAllBots ? null : botRes?.data || null);
     } catch (error) {
       console.error(error);
@@ -117,7 +122,7 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1560px] space-y-7 pb-10 pt-2 animate-in fade-in duration-700">
-      <RankingHero />
+      <RankingHero topUsers={topThree} />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_auto_1fr] xl:items-center">
         <div className="flex items-center gap-3">
@@ -159,7 +164,7 @@ export default function DashboardPage() {
           chartTicks={chartTicks}
         />
 
-        <ActivityPanel />
+        <ActivityPanel activities={stats.activities} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-5">
@@ -201,7 +206,17 @@ export default function DashboardPage() {
   );
 }
 
-function RankingHero() {
+function RankingHero({ topUsers = [] }) {
+  const formatUserRevenue = (u) => {
+    if (!u) return "R$ 0,00";
+    return `R$ ${Number(u.totalRevenue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+  };
+
+  const getUserName = (u) => {
+    if (!u) return "Vazio";
+    return u.user?.firstName || "Membro";
+  };
+
   return (
     <section className="relative overflow-hidden rounded-[34px] border border-white/[0.08] bg-[#060606] px-8 py-8 shadow-[0_26px_60px_rgba(0,0,0,0.28)] sm:px-12 lg:px-14">
       <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.03)_0%,transparent_36%,transparent_64%,rgba(255,255,255,0.03)_100%)]" />
@@ -220,18 +235,19 @@ function RankingHero() {
         </div>
 
         <div className="flex items-end justify-center gap-5 sm:gap-8">
-          <PodiumPlace position="2º" price="R$ 7.500" height="h-[78px]" accent="bg-white/[0.1]" notes="teal" />
-          <PodiumPlace position="1º" price="R$ 15.000" height="h-[110px]" accent="bg-white/[0.16]" notes="stack" featured />
-          <PodiumPlace position="3º" price="R$ 3.000" height="h-[58px]" accent="bg-white/[0.08]" notes="green" />
+          <PodiumPlace position="2º" name={getUserName(topUsers[1])} price={formatUserRevenue(topUsers[1])} height="h-[78px]" accent="bg-white/[0.1]" notes="teal" />
+          <PodiumPlace position="1º" name={getUserName(topUsers[0])} price={formatUserRevenue(topUsers[0])} height="h-[110px]" accent="bg-white/[0.16]" notes="stack" featured />
+          <PodiumPlace position="3º" name={getUserName(topUsers[2])} price={formatUserRevenue(topUsers[2])} height="h-[58px]" accent="bg-white/[0.08]" notes="green" />
         </div>
       </div>
     </section>
   );
 }
 
-function PodiumPlace({ position, price, height, accent, notes, featured }) {
+function PodiumPlace({ position, name, price, height, accent, notes, featured }) {
   return (
     <div className="flex flex-col items-center">
+      <div className="text-[0.7rem] font-black uppercase tracking-widest text-white/40 mb-1">{name}</div>
       <MoneyVisual variant={notes} featured={featured} />
       <div
         className={`relative mt-2 flex w-[92px] flex-col items-center justify-center rounded-t-[22px] border border-white/[0.08] text-center ${height} ${accent} ${
@@ -240,7 +256,7 @@ function PodiumPlace({ position, price, height, accent, notes, featured }) {
       >
         <div className="absolute -top-3 h-6 w-[70px] rounded-full border border-white/[0.08] bg-[#101010] shadow-[0_0_25px_rgba(255,255,255,0.08)]" />
         <div className="relative z-10 mt-4 text-[2rem] font-black italic leading-none text-white">{position}</div>
-        <div className="relative z-10 mt-2 text-[1rem] font-black text-white sm:text-[1.08rem]">{price}</div>
+        <div className="relative z-10 mt-2 text-[0.8rem] font-black text-white sm:text-[0.85rem]">{price}</div>
       </div>
     </div>
   );
@@ -402,18 +418,48 @@ function PeriodButton({ active, onClick, children }) {
   );
 }
 
-function ActivityPanel() {
+function ActivityPanel({ activities = [] }) {
+  if (!activities || activities.length === 0) {
+    return (
+      <section
+        className={`${PANEL_CLASS} flex min-h-[350px] flex-col items-center justify-center px-8 py-7 text-center md:min-h-[390px]`}
+      >
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.05]">
+          <Activity size={30} className="text-[#4d6187]" />
+        </div>
+        <h2 className="text-[1.85rem] font-bold tracking-[-0.03em] text-white">Log de Atividade</h2>
+        <p className="mt-2 text-[0.78rem] font-semibold uppercase tracking-[0.22em] text-[#556278]">
+          Nenhuma atividade ainda
+        </p>
+      </section>
+    );
+  }
+
   return (
-    <section
-      className={`${PANEL_CLASS} flex min-h-[350px] flex-col items-center justify-center px-8 py-7 text-center md:min-h-[390px]`}
-    >
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.05]">
-        <Activity size={30} className="text-[#4d6187]" />
+    <section className={`${PANEL_CLASS} flex min-h-[350px] flex-col px-8 py-7 md:min-h-[390px]`}>
+      <div className="mb-6 flex items-center justify-between">
+        <h2 className="text-[1.95rem] font-bold tracking-[-0.03em] text-white">Atividade</h2>
+        <Activity size={18} className="text-white/40" />
       </div>
-      <h2 className="text-[1.85rem] font-bold tracking-[-0.03em] text-white">Log de Atividade</h2>
-      <p className="mt-2 text-[0.78rem] font-semibold uppercase tracking-[0.22em] text-[#556278]">
-        Nenhuma atividade ainda
-      </p>
+
+      <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
+        {activities.map((act, i) => (
+          <div key={act.id || i} className={`${INNER_PANEL_CLASS} flex items-start gap-4 p-4 transition-colors hover:bg-white/[0.05]`}>
+            <div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+              act.type === 'payment_approved' ? 'bg-green-500' : 
+              act.type === 'payment_created' ? 'bg-blue-500' : 'bg-white/40'
+            }`} />
+            <div className="space-y-1">
+              <p className="text-[0.92rem] font-medium leading-snug text-white/90">
+                {act.message}
+              </p>
+              <p className="text-[0.72rem] font-semibold uppercase tracking-wider text-white/30">
+                {new Date(act.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
